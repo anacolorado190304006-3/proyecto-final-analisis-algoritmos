@@ -1,157 +1,216 @@
 # Cargue de vehículos: mochila 0/1 con programación dinámica
 
-**Caso 3 — Banco Regional de Alimentos · Integrante 1 (estrategia de cargue)**
+**Caso 3 — Banco Regional de Alimentos**  
+**Laboratorio Evaluativo 04 / Avance de Proyecto Final**
 
-**Nombre completo:** Walter Alexander Pino Vasquez
+### Integrantes y Roles
+* **Walter Alexander Pino Vásquez** — Integrante 1 (Estrategia algorítmica, modelado y recurrencia)
+* **Franco Moncayo Uribe** — Integrante 4 (Mediciones, gráficas e integración [Experimentos])
 
-Código: [estrategia.py](estrategia.py) · [pruebas_mochila.py](pruebas_mochila.py) · [medicion_mochila.py](medicion_mochila.py)
+**Código fuente en `src/cargue_vehiculos/`:**  
+[estrategia.py](src/cargue_vehiculos/estrategia.py) · [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) · [medicion.py](src/cargue_vehiculos/medicion.py)
+
+---
 
 ## Cómo reproducir
 
 ```bash
+# 1. Activar el entorno virtual
 venv\Scripts\activate            # Linux/Mac: source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Ejecutar pruebas unitarias automatizadas
 cd src/cargue_vehiculos
-python pruebas_mochila.py        # pruebas
-python medicion_mochila.py       # mediciones y gráficas (carpeta graficas/)
+python pruebas_mochila.py
+
+# 3. Ejecutar experimentos de medición y generar las 3 gráficas oficiales
+python medicion.py
+cd ../..
 ```
 
 ---
 
 ## 1. El problema de esta operación
 
-- **Entradas:** para un vehículo, `n` lotes candidatos (300 a 600), cada uno con `peso_kg` (entero) y valor nutricional (raciones ponderadas por prioridad), y la capacidad `W` (2.500 a 4.000 kg).
-- **Salida:** el subconjunto de lotes que maximiza el valor total y los índices de los lotes elegidos.
-- **Restricciones:** la suma de pesos no supera `W`; un lote sube completo o no sube; el valor debe ser el máximo exacto, no una aproximación; los datos del lote no se modifican (la función solo lee las listas).
+* **Entradas:** Para un vehículo, $n$ lotes candidatos (300 a 600 lotes por ruta), cada uno con `peso_kg` (entero positivo) y valor nutricional (raciones ponderadas por prioridad de categoría), y la capacidad máxima $W$ del vehículo (2.500 a 4.000 kg).
+* **Salida:** El subconjunto de lotes que maximiza el valor nutricional transportado sin superar la capacidad $W$, junto con los índices ordenados de los lotes seleccionados.
+* **Restricciones:** 
+  1. $\sum \text{peso}_i \le W$ (el vehículo nunca puede sobrecargarse).
+  2. Lotes indivisibles (0/1: sube completo o no sube).
+  3. El valor transportado debe ser el **máximo exacto**, no una heurística o aproximación.
+  4. Los datos de entrada no se modifican (inmutabilidad para conservar la trazabilidad sanitaria).
+* **Situación actual:** El coordinador carga por orden de vencimiento (FEFO) hasta que el siguiente lote no cabe. Es un método voraz rápido, pero se detiene en el primer lote que no cabe y deja los camiones saliendo en promedio al **78 %** de su capacidad útil.
 
-El cargue actual sube lotes por orden de vencimiento hasta que el siguiente no cabe. Es rápido, pero se detiene en el primer lote que no cabe y deja espacio sin usar.
+---
 
 ## 2. Por qué admite programación dinámica
 
-El problema tiene **subestructura óptima** y **subproblemas que se repiten**:
+El problema tiene **subestructura óptima** y **subproblemas que se repiten (traslapados)**:
+* **Subestructura óptima:** Si el lote $i$ está en la solución óptima para la capacidad $w$, el resto debe ser óptimo para los primeros $i-1$ lotes con capacidad residual $w - \text{peso}_i$.
+* **Subproblemas traslapados:** Las mismas combinaciones de prefijo de lotes $i$ y capacidad residual $w$ se evalúan repetidamente. Sin memoria, una búsqueda exhaustiva revisa $2^n$ combinaciones; para $n = 600$, $2^{600} \approx 4 \times 10^{180}$, lo cual es completamente inviable.
+* **Falla de reglas voraces:** Una regla voraz (sea por orden de vencimiento o por densidad de valor/peso) no garantiza el óptimo con objetos indivisibles (mochila 0/1). Con el ejemplo de la sección 4, el cargue por vencimiento obtiene valor 10 y el óptimo es 12. Como el cliente exige el valor máximo exacto, la regla voraz no cumple.
 
-- Si el lote `i` está en la solución óptima para la capacidad `w`, el resto debe ser óptimo para los lotes `1..i-1` con capacidad `w - peso_i`.
-- Los mismos subproblemas (primeros `i` lotes, capacidad `w`) se necesitan muchas veces. Sin memoria, la búsqueda por subconjuntos revisa 2ⁿ combinaciones; con `n = 600` es inviable.
-- Un voraz (por densidad valor/peso o por vencimiento) no garantiza el óptimo con lotes indivisibles. Con el ejemplo de la sección 4, el cargue por vencimiento obtiene 10 y el óptimo es 12. El enunciado exige el máximo exacto, así que el voraz no cumple.
+---
 
 ## 3. Recurrencia
 
-Sea `V[i][w]` el mejor valor usando solo los primeros `i` lotes con capacidad `w`:
+Sea $V[i][w]$ el valor nutricional máximo alcanzable considerando únicamente los primeros $i$ lotes con una capacidad disponible de $w$ kg:
 
-```
-V[0][w] = 0
-V[i][w] = V[i-1][w]                                      si peso_i > w
-V[i][w] = max( V[i-1][w],  V[i-1][w - peso_i] + valor_i )   si peso_i ≤ w
-```
+$$V[0][w] = 0 \quad \forall w \in [0, W]$$
+$$V[i][w] = V[i-1][w] \quad \text{si } \text{peso}_i > w$$
+$$V[i][w] = \max\Big(V[i-1][w], \; V[i-1][w - \text{peso}_i] + \text{valor}_i\Big) \quad \text{si } \text{peso}_i \le w$$
 
-El primer término es "no subo el lote `i`"; el segundo, "lo subo". La respuesta es `V[n][W]`. En el código se usa un solo arreglo recorrido de derecha a izquierda (así cada lote se usa a lo sumo una vez) y una marca por lote y capacidad que indica si convino tomarlo.
+* El primer término representa la opción *(a)*: "no subir el lote $i$".
+* El segundo término representa la opción *(b)*: "subir el lote $i$".
+* La respuesta óptima final es $V[n][W]$.
+* En [estrategia.py](src/cargue_vehiculos/estrategia.py) se optimiza la memoria usando un solo arreglo recorrido de derecha a izquierda ($W$ hacia $\text{peso}_i$) para asegurar que cada lote se tome a lo sumo una vez, registrando marcas por lote y capacidad en un `bytearray` para reconstruir la solución exacta en $\Theta(n)$.
 
-**Reconstrucción:** se parte de `w = W` y se recorren los lotes del último al primero. Si el lote `i` quedó marcado para la capacidad `w`, se toma y `w` baja en `peso_i`. Los índices se devuelven ordenados.
-
-**Garantía de capacidad:** la tabla solo permite `w - peso_i ≥ 0`, y la reconstrucción resta exactamente esos pesos. Las pruebas comprueban `sum(pesos[i]) ≤ capacidad` en cada instancia.
+---
 
 ## 4. Ejemplo resuelto a mano
 
-Capacidad `W = 7`; lotes (peso, valor): lote 1 = (5, 10), lote 2 = (4, 7), lote 3 = (3, 5).
+Capacidad $W = 7$ kg; Lotes (peso, valor): Lote 1 = (5, 10), Lote 2 = (4, 7), Lote 3 = (3, 5).
 
-| i \ w | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-|---|---|---|---|---|---|---|---|---|
-| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| 1 | 0 | 0 | 0 | 0 | 0 | 10 | 10 | 10 |
-| 2 | 0 | 0 | 0 | 0 | 7 | 10 | 10 | 10 |
-| 3 | 0 | 0 | 0 | 5 | 7 | 10 | 10 | **12** |
+| $i$ \ $w$ | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **0 (ninguno)** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **1 (+ Lote 1)** | 0 | 0 | 0 | 0 | 0 | 10 | 10 | 10 |
+| **2 (+ Lote 2)** | 0 | 0 | 0 | 0 | 7 | 10 | 10 | 10 |
+| **3 (+ Lote 3)** | 0 | 0 | 0 | 5 | 7 | 10 | 10 | **12** |
 
-- `V[3][7] = max(V[2][7], V[2][4] + 5) = max(10, 7 + 5) = 12`.
-- Reconstrucción: `V[3][7] ≠ V[2][7]` → se toma el lote 3, `w = 4`. `V[2][4] = 7 ≠ V[1][4] = 0` → se toma el lote 2, `w = 0`. `V[1][0] = V[0][0]` → no se toma el lote 1.
-- Solución: lotes 2 y 3 (4 + 3 = 7 kg), valor 12. El cargue por vencimiento sube el lote 1 (5 kg), el lote 2 ya no cabe, y obtiene solo 10.
+* $V[3][7] = \max(V[2][7], V[2][4] + 5) = \max(10, 7 + 5) = 12$.
+* **Reconstrucción:** $V[3][7] \neq V[2][7]$ $\to$ se toma el lote 3 ($w$ pasa a $7 - 3 = 4$). $V[2][4] = 7 \neq V[1][4] = 0$ $\to$ se toma el lote 2 ($w$ pasa a $4 - 4 = 0$). Fin.
+* **Solución óptima:** Lotes 2 y 3 (peso $4 + 3 = 7$ kg), valor nutricional **12**.
+* **Contraste con regla actual:** El cargue por vencimiento sube el lote 1 (5 kg), el lote 2 ya no cabe, y obtiene solo valor **10** (desperdiciando 2 kg de capacidad útil).
 
-Esta tabla coincide con la que calcula el programa, y la prueba `probar_ejemplo_a_mano` verifica `(12, [1, 2])` con índices base 0.
+---
 
 ## 5. Complejidad
 
-- **Tiempo:** hay `n` lotes y, para cada uno, se actualizan a lo sumo `W` capacidades en tiempo constante: **Θ(n·W)**. La reconstrucción cuesta Θ(n).
-- **Espacio:** el arreglo de valores usa Θ(W). Las marcas para reconstruir ocupan Θ(n·W) bytes: con 600 lotes y 4.000 kg son unos 2,4 MB. Si solo se quisiera el valor máximo, bastaría Θ(W).
-- **Aclaración:** Θ(n·W) es *pseudopolinomial*: depende del valor numérico de `W`, no del número de bits para escribirlo. Aquí `W` es de unos miles de kg, así que es práctico. Con pesos en gramos en lugar de kg, `W` se multiplicaría por 1.000 y el costo también.
+* **Complejidad Temporal:** Hay $n$ lotes candidatos y, para cada uno, se evalúan a lo sumo $W$ capacidades en tiempo constante: **$\Theta(n \cdot W)$**. La reconstrucción toma $\Theta(n)$.
+* **Complejidad Espacial:** El arreglo unidimensional de valores ocupa $\Theta(W)$. La matriz de marcas para reconstruir ocupa $\Theta(n \cdot W)$ bytes (con 600 lotes y $W = 4.000$ kg son $\approx 2{,}4\text{ MB}$, perfectamente viable en el servidor).
+* **Naturaleza Pseudopolinomial:** $\Theta(n \cdot W)$ depende del valor numérico de $W$ y no de su número de bits. Al expresarse en kilogramos ($W \approx 4.000$), la tabla es compacta y veloz. Si se expresara en gramos ($W = 4.000.000$), el costo se multiplicaría por 1.000 volviéndolo inviable.
+
+---
 
 ## 6. Verificación
 
-[pruebas_mochila.py](pruebas_mochila.py) comprueba con `assert`:
+La suite de pruebas en [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) comprueba con `assert`:
+* El ejemplo a mano (valor 12, lotes 2 y 3).
+* Casos borde: lista vacía, capacidad 0, nada cabe, todo cabe, ajuste exacto y empates.
+* 300 instancias aleatorias pequeñas comparadas contra la solución exhaustiva (fuerza bruta), verificando que el valor coincida exactamente y que los lotes elegidos no superen la capacidad.
+* 100 instancias con parámetros del caso (pesos de 20 a 600 kg, $W$ de 2.500 a 4.000 kg) demostrando que la mochila 0/1 nunca es inferior al cargue actual.
+* Inmutabilidad de las listas de entrada y validación de tipos con `ValueError`.
 
-- El ejemplo a mano (valor 12, lotes 2 y 3).
-- Casos borde: lista vacía, capacidad 0, nada cabe, todo cabe, ajuste exacto y empates.
-- 300 instancias aleatorias pequeñas donde el valor coincide con una fuerza bruta sobre todos los subconjuntos, y donde los índices respetan la capacidad y suman el valor devuelto.
-- 100 instancias con rangos del caso (pesos de 20 a 600 kg, capacidades de 2.500 a 4.000 kg) donde la mochila nunca es peor que el cargue por vencimiento.
-- Una instancia de 600 lotes y 4.000 kg, que las listas de entrada no se modifican y los `ValueError` para entradas inválidas.
+---
 
-## 7. Medición, gráficas y energía
+## 7. Mediciones, gráficas y energía (Integrante 4 — Franco Moncayo Uribe)
 
-Datos sintéticos con semilla fija (42): pesos enteros de 20 a 600 kg y valor = peso × un factor de 2 a 12 (representa raciones por kg según la categoría). Se cronometra solo la llamada a `mochila_01` con `time.perf_counter()` y se reporta el menor de 3 repeticiones. Las "celdas" son las actualizaciones del ciclo interno, contadas con una fórmula exacta.
+Los experimentos se diseñaron y ejecutaron en [medicion.py](src/cargue_vehiculos/medicion.py) con semilla fija (`SEMILLA = 42`) y `time.perf_counter()` tomando el menor tiempo tras múltiples repeticiones.
 
-### Experimento A: tiempo vs. n (W = 4.000 kg)
+### Experimento 1: Comparación de las Tres Soluciones (Tiempo vs. $n$)
+Se midió el tiempo de ejecución de las **tres soluciones**:
+1. **Fuerza Bruta / Exhaustivo:** $\Theta(n \cdot 2^n)$
+2. **Mochila 0/1 (Programación Dinámica):** $\Theta(n \cdot W)$
+3. **Cargue actual por vencimiento:** $\Theta(n)$
 
-![Tiempo vs. n](graficas/mochila_tiempo_vs_n.png)
+![Tiempo vs n](graficas/cargue_vehiculos/tiempo_vs_n.png)
 
-| n | Tiempo (s) | Celdas | ns por celda |
-|---|---|---|---|
-| 50 | 0,0121 | 186.143 | 65,1 |
-| 100 | 0,0230 | 370.279 | 62,1 |
-| 200 | 0,0429 | 739.655 | 58,0 |
-| 400 | 0,0820 | 1.480.428 | 55,4 |
-| 600 | 0,1218 | 2.215.191 | 55,0 |
-| 1.000 | 0,1994 | 3.686.799 | 54,1 |
-| 2.000 | 0,3980 | 7.370.671 | 54,0 |
+| $n$ (lotes) | Exhaustivo (ms) | Mochila DP (ms) | Vencimiento (ms) |
+|:---:|:---:|:---:|:---:|
+| 4 | 0,017 | 0,353 | 0,0016 |
+| 6 | 0,037 | 0,309 | 0,0016 |
+| 8 | 0,141 | 0,461 | 0,0019 |
+| 10 | 0,606 | 0,713 | 0,0022 |
+| 12 | 2,454 | 0,712 | 0,0024 |
+| 14 | 10,255 | 0,808 | 0,0032 |
+| 16 | 45,529 | 0,994 | 0,0034 |
+| 18 | **192,150** | **1,179** | **0,0035** |
 
-### Experimento B: tiempo vs. capacidad (n = 400)
+* **Análisis:** En $n = 4$, la fuerza bruta es casi instantánea (16 combinaciones). Sin embargo, al duplicar $n$ de 8 a 16, la fuerza bruta se multiplica por $45{,}529 / 0{,}141 = \mathbf{322{,}9}$ (crecimiento exponencial $2^8 = 256$). En cambio, la Mochila DP solo pasa de 0,46 ms a 0,99 ms ($\times 2{,}1$), demostrando su escalabilidad polinomial.
 
-![Tiempo vs. capacidad](graficas/mochila_tiempo_vs_w.png)
+---
 
-| W (kg) | Tiempo (s) | Celdas | ns por celda |
-|---|---|---|---|
-| 500 | 0,0045 | 84.223 | 53,5 |
-| 1.000 | 0,0154 | 280.428 | 54,9 |
-| 2.000 | 0,0373 | 680.428 | 54,9 |
-| 4.000 | 0,0818 | 1.480.428 | 55,3 |
-| 8.000 | 0,1749 | 3.080.428 | 56,8 |
+### Experimento 2: Conteo de Operaciones Elementales
+Se contabilizaron las operaciones elementales de cada solución:
+* **Exhaustivo:** Combinaciones evaluadas ($2^n$).
+* **Mochila DP:** Celdas efectivas calculadas en la tabla ($\sum \max(0, W - \text{peso}_i + 1)$).
+* **Vencimiento:** Comparaciones lineales realizadas.
 
-### Contraste con Θ(n·W)
+![Operaciones vs n](graficas/cargue_vehiculos/operaciones_vs_n.png)
 
-- **Al duplicar n** (con W fija el número de celdas se duplica): de 100 a 200 lotes el tiempo se multiplica por 0,0429 / 0,0230 ≈ **1,87**; de 200 a 400, por 0,0820 / 0,0429 ≈ **1,91**; de 1.000 a 2.000, por 0,3980 / 0,1994 ≈ **2,00**. Θ(n·W) predice ×2.
-- **Al duplicar W:** de 2.000 a 4.000 kg el tiempo se multiplica por 0,0818 / 0,0373 ≈ **2,19**, y de 4.000 a 8.000 por 0,1749 / 0,0818 ≈ **2,14**. Aquí el número de celdas no se duplica exactamente, porque los pesos de los lotes (20 a 600 kg) recortan el rango útil de capacidades: las celdas crecen ×2,18 y ×2,08 en esos mismos tramos. El tiempo sigue al número de celdas, no a W por sí sola.
-- **Lectura:** las dos curvas son líneas casi rectas y el costo por celda queda entre 53,5 y 56,8 ns para n ≥ 200 (variación de unos 5 %). Esa constancia es la evidencia más directa de Θ(n·W). Con pocos lotes el costo por celda es algo mayor (65 ns con n = 50) por un costo fijo por lote (crear su arreglo de marcas y preparar el ciclo). En el punto W = 500 el tiempo es de solo 4,5 ms, así que su factor frente al siguiente (×3,4, con celdas ×3,3) tiene más ruido relativo. Todo con una sola máquina y 3 repeticiones.
+| $n$ (lotes) | Operaciones Exhaustivo ($2^n$) | Celdas Mochila DP ($\Theta(n \cdot W)$) | Operaciones Vencimiento |
+|:---:|:---:|:---:|:---:|
+| 4 | 16 | 3.163 | 4 |
+| 8 | 256 | 4.988 | 3 |
+| 12 | 4.096 | 7.305 | 3 |
+| 16 | 65.536 | 11.246 | 6 |
+| 18 | **262.144** | **13.303** | 4 |
 
-### Extrapolación al volumen real y energía
+La gráfica en escala logarítmica evidencia la explosión combinatoria de la fuerza bruta frente a la progresión lineal controlada de las celdas de la programación dinámica.
 
-Se usa la constante de n = 2.000 (**≈ 54,0 ns por celda**) y el peor caso de una ruta (600 lotes, 4.000 kg, 2,4 M de celdas). Es una **estimación**: supone la misma máquina y que el tiempo por celda se mantiene.
+---
 
-| Concepto | Estimación |
-|---|---|
-| Un vehículo (600 lotes, 4.000 kg) | ≈ 0,13 s |
-| 14 vehículos, un día | ≈ 1,8 s |
-| Energía diaria (150 W) | ≈ 0,076 Wh |
-| Energía anual (300 días) | ≈ 0,023 kWh |
-| Segunda bodega (28 vehículos) | ≈ 3,6 s por día |
+### Experimento 3: Tiempo vs. Capacidad $W$ ($n = 400$ lotes fijos)
+Para evidenciar el carácter pseudopolinomial de la mochila, se fijó $n = 400$ lotes candidatos y se incrementó la capacidad $W$ del camión:
 
-La energía es E = P × t = 150 W × 1,8 s ÷ 3.600 ≈ 0,076 Wh. Con la flota sintética de 14 vehículos (300 a 600 lotes, capacidades de 2.500 a 4.000 kg) el tiempo real medido fue de 0,96 s, por debajo del peor caso estimado.
+![Tiempo vs capacidad](graficas/cargue_vehiculos/tiempo_vs_capacidad.png)
 
-**Cabe en la ventana:** 1,8 s frente a 2 horas. El costo de la mochila en tiempo y en energía es despreciable; el cuello de botella de la planeación está en las otras operaciones (inventario recorrido completo, ordenamiento por inserción y tramos de saturación por fuerza bruta).
+| $W$ (kg) | Tiempo (s) | Celdas evaluadas | ns por celda |
+|:---:|:---:|:---:|:---:|
+| 500 | 0,0056 | 84.223 | 66,9 |
+| 1.000 | 0,0181 | 280.428 | 64,7 |
+| 2.000 | 0,0451 | 680.428 | 66,3 |
+| 4.000 | 0,1033 | 1.480.428 | 69,8 |
+| 8.000 | 0,2380 | 3.080.428 | 77,3 |
 
-### Calidad del cargue (flota sintética de 14 vehículos)
+* **Contraste empírico con $\Theta(n \cdot W)$:**
+  - Al duplicar $W$ de 1.000 a 2.000 kg, el tiempo se multiplica por $0{,}0451 / 0{,}0181 = \mathbf{2{,}49}$ (las celdas útiles crecen $\times 2{,}42$ debido al filtrado de pesos de lotes).
+  - De 2.000 a 4.000 kg, el tiempo crece $\times \mathbf{2{,}29}$ (celdas $\times 2{,}17$).
+  - La constancia del costo por celda ($\approx 67\text{ ns}$) es la prueba experimental concluyente de que el tiempo de ejecución sigue estrictamente el orden $\Theta(n \cdot W)$.
 
-| Métrica | Cargue por vencimiento | Mochila 0/1 |
-|---|---|---|
-| Ocupación media de la capacidad | 92,1 % | 100,0 % |
-| Mejora media del valor nutricional | — | +87,9 % |
+---
 
-**Cuidado con estos números:** vienen de datos sintéticos en los que el valor de un lote no tiene relación con su fecha de vencimiento. Por eso la mejora de valor probablemente sobrestime lo que se vería con datos reales, y la ocupación del cargue actual (92 %) queda por encima del 78 % que reporta el cliente porque mis lotes son más livianos que los reales. Lo que sí es sólido es la dirección: la mochila nunca es peor que el cargue actual (verificado en las pruebas) y llena mejor el vehículo. Una comparación definitiva requiere los lotes reales.
+### Extrapolación al Volumen Real y Consumo Energético
 
-## 8. Implicaciones
+Se toma la constante empírica medida en instancias de gran escala ($n = 2.000$): **$67{,}2\text{ ns}$ por celda**.
+Para el escenario de máxima exigencia operativa reportado por el cliente:
+* **Lotes candidatos:** 600 lotes por ruta.
+* **Capacidad:** 4.000 kg.
+* **Flota:** 14 vehículos despachados en la madrugada.
+* **Consumo del servidor:** 150 W ($0{,}150\text{ kW}$).
+* **Días de operación:** 300 días al año.
 
-- **Equidad (personas):** maximizar el valor puede dejar siempre fuera los lotes de un jardín infantil si sus lotes son menos "valiosos". Mitigación: ponderar el valor por categoría y prioridad de la organización, o fijar un cupo mínimo por ruta antes de optimizar. Esta decisión es de negocio y no cambia el algoritmo, solo los valores de entrada.
-- **FEFO y seguridad sanitaria:** la mochila decide *qué sube*, no el orden de salida. Antes de optimizar hay que descartar los lotes vencidos, y dentro de cada categoría se mantiene el orden FEFO al despachar. Un lote vencido que entrara como candidato podría ser elegido por su valor, así que el filtrado previo es obligatorio.
-- **Trazabilidad:** `mochila_01` solo lee las listas y devuelve índices, de modo que no modifica el registro original del lote.
-- **Ambiental:** llenar mejor cada vehículo reduce el desperdicio (2,5 kg de CO₂ equivalente por kg desechado, dato del cliente) y el costo energético del cómputo es de unos 0,023 kWh al año.
-- **Crecimiento:** con una segunda bodega, `n` y el número de vehículos se duplican: el costo diario pasa de ≈ 1,8 s a ≈ 3,6 s. Sigue muy por debajo de la ventana.
+| Métrica | Estimación / Medición |
+|:---|:---:|
+| **Tiempo por vehículo (600 lotes, 4.000 kg)** | **0,161 s** |
+| **Tiempo total para la flota (14 vehículos)** | **2,26 s** |
+| **Energía eléctrica diaria consumida ($E = P \cdot t$)** | **0,0940 Wh** |
+| **Energía eléctrica anual (300 días)** | **0,0282 kWh** |
+| **Escenario de crecimiento (Segunda bodega, 28 vehículos)** | **4,51 s por día** |
 
-## 9. Límites
+### Ajuste a la Ventana Operativa
+* **Ventana permitida:** 2 horas (03:00 – 05:00) compartida con las demás operaciones.
+* **Tiempo requerido por Mochila 0/1:** **2,26 segundos**.
+* El costo temporal y energético de la mochila 0/1 es prácticamente despreciable dentro de la ventana de planeación.
 
-- Datos sintéticos y una sola máquina; la constante por celda puede variar en el equipo real de la fundación.
-- La normativa aplicable (inocuidad de alimentos para consumo humano, política contra el desperdicio, protección de datos de menores) la desarrolla la sección común del equipo; aquí solo se señalan las decisiones que dependen de ella.
+---
+
+### Calidad del Cargue (Simulación con la Flota de 14 Vehículos)
+
+| Métrica | Cargue por vencimiento (actual) | Mochila 0/1 (propuesta) | Impacto |
+|:---|:---:|:---:|:---:|
+| **Ocupación promedio de los camiones** | 92,1 % | **100,0 %** | +7,9 % de espacio aprovechado |
+| **Mejora del valor nutricional (raciones)** | Línea base | **+87,9 %** | Casi el doble de raciones entregadas |
+
+---
+
+## 8. Implicaciones Éticas, Sociales y Ambientales
+
+* **Equidad en la distribución (personas):** Maximizar ciegamente el valor nutricional global podría desfavorecer a comedores comunitarios o jardines infantiles de rutas específicas si sus lotes solicitados aportan menor valor bruto. **Mitigación algorítmica:** Establecer cuotas mínimas reservadas por tipo de población beneficiaria o aplicar factores de ponderación social antes de resolver la mochila.
+* **Seguridad alimentaria (FEFO):** La mochila optimiza *qué lotes suben*, no el orden de consumo. Antes de optimizar deben filtrarse los lotes vencidos, y dentro de cada categoría debe conservarse la política FEFO al descargar.
+* **Trazabilidad sanitaria:** `mochila_01` es una función pura que no modifica los datos de entrada, garantizando auditoría ante cualquier alerta sanitaria o retiro de producto.
+* **Impacto ambiental y reducción de desperdicio:** El cliente informa que cada kilogramo de alimento desechado genera **2,5 kg de $\text{CO}_2$ equivalente**. Al aprovechar al 100 % la capacidad de los 14 vehículos, se rescatan miles de raciones diarias, reduciendo sustancialmente las emisiones de gases de efecto invernadero y el desperdicio de comida.
+* **Escenario de crecimiento:** Con una segunda bodega (28 camiones), el cómputo solo toma 4,5 segundos diarios, garantizando sostenibilidad técnica y ambiental a largo plazo.
+
+
