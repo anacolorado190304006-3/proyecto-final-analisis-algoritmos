@@ -7,10 +7,11 @@
 
 * **Walter Alexander Pino Vásquez** — Estrategia algorítmica, modelado y recurrencia.
 * **Ana María Colorado Varela** — Solución exhaustiva, reglas de cargue y contraejemplos.
+* **Juan David Machado Mosquera** — Datos, pruebas y validación.
 * **Franco Moncayo Uribe** — Mediciones, gráficas e integración.
 
 **Código fuente en `src/cargue_vehiculos/`:**  
-[estrategia.py](src/cargue_vehiculos/estrategia.py) · [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) · [medicion.py](src/cargue_vehiculos/medicion.py) · [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) · [regla_actual.py](src/cargue_vehiculos/regla_actual.py) · [pruebas_contraejemplos.py](src/cargue_vehiculos/pruebas_contraejemplos.py)
+[estrategia.py](src/cargue_vehiculos/estrategia.py) · [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) · [medicion.py](src/cargue_vehiculos/medicion.py) · [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) · [regla_actual.py](src/cargue_vehiculos/regla_actual.py) · [pruebas_contraejemplos.py](src/cargue_vehiculos/pruebas_contraejemplos.py) · [datos.py](src/cargue_vehiculos/datos.py) · [pruebas.py](src/cargue_vehiculos/pruebas.py)
 
 El Laboratorio 4 del 18 de noviembre de 2026 aborda la operación 3: cargue de vehículos. Los apartados pendientes del proyecto final se identifican para la entrega del 23 de noviembre.
 
@@ -143,7 +144,61 @@ La suite de pruebas en [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila
 
 Se reutiliza `verificar_solucion` de la suite existente. Los resultados exactos aparecen en la sección 5; los contraejemplos no miden tiempos ni energía.
 
-**Integración pendiente del Laboratorio 4 — Integrante 3:** consolidar `datos.py` y `pruebas.py`, incorporar fechas de vencimiento a los datos y coordinar las pruebas de las nuevas interfaces. Las suites actuales permanecen separadas y ejecutables.
+#### 3.2.1. Datos — Integrante 3: Juan David Machado Mosquera
+
+[datos.py](src/cargue_vehiculos/datos.py) genera lotes con la estructura entregada por el cliente. Cada lote es un `RegistroLote` inmutable (`dataclass(frozen=True)`) con `codigo_lote`, `categoria`, `fecha_vencimiento`, `peso_kg`, `raciones` y `donante`; intentar modificarlo lanza `FrozenInstanceError`, lo que protege la trazabilidad sanitaria del registro original.
+
+| Parámetro | Valor sintético | Fuente |
+|---|---|---|
+| Lotes candidatos por ruta | 300 a 600 | Enunciado del caso |
+| Capacidad del vehículo | 2.500 a 4.000 kg | Enunciado del caso |
+| Peso por lote | 20 a 600 kg, entero | Supuesto del equipo, igual al de `medicion.py` |
+| Raciones | 2 a 4 por kg | Supuesto del equipo |
+| Categorías | 40: 12 de proteína, 10 de frutas y verduras, 18 de otros | Enunciado (40 categorías y 3 grupos de prioridad) |
+| Prioridad de la categoría | proteína 3, frutas y verduras 2, otros 1 | Supuesto del equipo |
+| Vencimiento | 0 a 30 días tras el despacho; el inventario puede incluir lotes vencidos hasta hace 5 días | Supuesto del equipo |
+
+El valor nutricional es `raciones × prioridad`, de modo que cada kilogramo aporta entre 2 y 12 unidades, el mismo rango que usa `medicion.py`. Las funciones públicas son:
+
+| Función | Uso |
+|---|---|
+| `generar_inventario(n, semilla, fecha_despacho, incluir_vencidos)` | Inventario de `n` lotes con códigos únicos; puede incluir lotes vencidos para probar su exclusión. |
+| `generar_ruta(semilla, n)` | Candidatos aptos de una ruta y capacidad del vehículo, en los rangos del caso. |
+| `generar_instancia_pequena(n, semilla)` | Instancias de hasta 16 lotes con capacidad entre el 30 % y el 70 % del peso total, para contrastar con la exhaustiva. |
+| `filtrar_aptos(lotes, fecha_despacho)` | Lista nueva sin los lotes vencidos; no modifica la entrada. |
+| `a_tuplas(lotes, fecha_despacho)` | Convierte a `Lote = (peso_kg, valor_nutricional, dias_para_vencer)` para `exhaustivo.py` y `regla_actual.py`. |
+| `a_listas(lotes)` | Separa pesos y valores para `mochila_01`, conservando los índices. |
+
+Cada generador usa su propio `random.Random(semilla)`: la misma semilla reproduce exactamente los mismos datos y no altera el estado global de `random`. La semilla base es `SEMILLA_BASE = 2026` y la fecha de despacho de referencia es el 18 de noviembre de 2026.
+
+#### 3.2.2. Suite consolidada — Integrante 3: Juan David Machado Mosquera
+
+[pruebas.py](src/cargue_vehiculos/pruebas.py) es el punto único de verificación del cargue. Ejecuta los cuatro algoritmos (DP, exhaustiva, vencimiento y densidad) con la misma interfaz y aplica a cada salida la función `verificar_cargue`. Esa función comprueba que los índices sean enteros, únicos, ordenados y válidos; que el peso no supere la capacidad; y que el valor sea exactamente la suma de los registros completos elegidos. Así se verifica que ningún lote se fraccione. También comprueba que ningún algoritmo modifique los lotes recibidos.
+
+| Prueba | Qué verifica |
+|---|---|
+| `probar_reproducibilidad` | Misma semilla, mismos datos; semilla distinta, datos distintos. |
+| `probar_rangos_del_caso` | Pesos, categorías y códigos únicos en 2.000 lotes; 300 a 600 candidatos y 2.500 a 4.000 kg en 20 rutas, y que los candidatos no quepan todos en el vehículo. |
+| `probar_registros_inmutables` | El registro original no puede modificarse. |
+| `probar_filtrado_de_vencidos` | `filtrar_aptos` excluye todos los lotes vencidos sin alterar el inventario, y ningún algoritmo despacha un lote vencido. |
+| `probar_adaptadores` | `a_tuplas` y `a_listas` conservan el orden y la correspondencia de índices. |
+| `probar_casos_limite` | 14 casos con valor óptimo conocido, para los cuatro algoritmos: sin lotes, capacidad cero, nada cabe, todo cabe, ajuste exacto, un kilogramo de menos, capacidad igual al peso total y uno menos, valores cero, pesos iguales, empate de valor, lote de 1 kg, lote más pesado que el vehículo y lote que vence el día del despacho. |
+| `probar_excepciones` | Capacidad negativa, peso no positivo, valor negativo, números no enteros y booleanos lanzan `ValueError` en las cuatro interfaces. |
+| `probar_aleatorias_contra_exhaustiva` | 40 instancias aleatorias (el mínimo exigido es 20) de 1 a 16 lotes, con semillas 1000 a 1039: la DP alcanza el mismo valor que `cargar_exhaustivo` y ninguna regla voraz lo supera. |
+| `probar_rutas_tamano_real` | 3 rutas de tamaño real: cargues válidos y DP con valor mayor o igual al de ambas reglas. La exhaustiva no se ejecuta a este tamaño ($2^{300}$ subconjuntos o más). |
+| `ejecutar_suites_previas` | Ejecuta todas las pruebas de `pruebas_mochila.py` y `pruebas_contraejemplos.py`, sin imprimir sus tablas. |
+
+**Resultados de la ejecución.** Las 10 pruebas pasaron en unos 2 segundos con Python 3.13.1. En las 40 instancias aleatorias la DP coincidió con la exhaustiva; la regla por vencimiento quedó por debajo del óptimo en 34 de ellas. En las tres rutas de tamaño real, la DP ocupó el 100 % de la capacidad del vehículo:
+
+| Ruta (semilla) | Lotes candidatos | Capacidad (kg) | Peso cargado por DP (kg) | Ocupación |
+|---|---|---|---|---|
+| 0 | 497 | 3.361 | 3.361 | 100,0 % |
+| 1 | 368 | 3.665 | 3.665 | 100,0 % |
+| 2 | 328 | 2.687 | 2.687 | 100,0 % |
+
+Estas ocupaciones dependen de los datos sintéticos, que contienen muchos lotes pequeños; no son una medición sobre datos reales del banco. Sirven como contraste con el 78 % promedio que reporta el caso para el cargue actual.
+
+`medicion.py` aún usa su propio generador de pesos y valores (sección 4.2). Integrar `datos.py` en las mediciones, para que incluyan las fechas de vencimiento y las reglas de `regla_actual.py`, queda coordinado con el Integrante 4.
 
 ---
 
@@ -382,6 +437,13 @@ Pendiente para la entrega del 23 de noviembre
 Desde la raíz del repositorio, con el entorno `.venvAnalisis` activado. Se utilizó Python 3.14.7 y las dependencias de [requirements.txt](requirements.txt).
 
 ```bash
+# Suite consolidada: datos, casos límite, contraste con la exhaustiva
+# y ejecución de las dos suites siguientes
+python -B src/cargue_vehiculos/pruebas.py
+
+# Ejemplo de ruta sintética generada con la semilla base
+python -B src/cargue_vehiculos/datos.py
+
 # Pruebas de mochila
 python -B src/cargue_vehiculos/pruebas_mochila.py
 
@@ -389,7 +451,7 @@ python -B src/cargue_vehiculos/pruebas_mochila.py
 python -B src/cargue_vehiculos/pruebas_contraejemplos.py
 ```
 
-Ambas suites se ejecutaron correctamente. La segunda imprime tablas de lotes, selecciones, pesos, valores y diferencias. Debe ejecutarse sin `-O`, para conservar las aserciones.
+`pruebas.py` no requiere dependencias externas. Las suites se ejecutaron correctamente. `pruebas_contraejemplos.py` imprime tablas de lotes, selecciones, pesos, valores y diferencias. Todas deben ejecutarse sin `-O`, para conservar las aserciones.
 
 ```bash
 # Ejecutar mediciones y generar las tres gráficas
