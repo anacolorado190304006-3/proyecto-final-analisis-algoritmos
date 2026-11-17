@@ -5,14 +5,31 @@
 
 **Integrantes y roles**
 
-* **Walter Alexander Pino Vásquez** — Integrante 1 (Estrategia algorítmica, modelado y recurrencia)
-* **Ana María Colorado Varela** — Integrante 2 (Solución exhaustiva, reglas de cargue y contraejemplos)
-* **Franco Moncayo Uribe** — Integrante 4 (Mediciones, gráficas e integración [Experimentos])
+* **Walter Alexander Pino Vásquez** — Estrategia algorítmica, modelado y recurrencia.
+* **Ana María Colorado Varela** — Solución exhaustiva, reglas de cargue y contraejemplos.
+* **Franco Moncayo Uribe** — Mediciones, gráficas e integración.
 
 **Código fuente en `src/cargue_vehiculos/`:**  
 [estrategia.py](src/cargue_vehiculos/estrategia.py) · [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) · [medicion.py](src/cargue_vehiculos/medicion.py) · [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) · [regla_actual.py](src/cargue_vehiculos/regla_actual.py) · [pruebas_contraejemplos.py](src/cargue_vehiculos/pruebas_contraejemplos.py)
 
 El Laboratorio 4 del 18 de noviembre de 2026 aborda la operación 3: cargue de vehículos. Los apartados pendientes del proyecto final se identifican para la entrega del 23 de noviembre.
+
+**Preparación del entorno**
+
+Desde la raíz del repositorio, en WSL Ubuntu:
+
+```bash
+# Crear el entorno virtual la primera vez
+python3 -m venv .venvAnalisis
+
+# Activar el entorno
+source .venvAnalisis/bin/activate
+
+# Instalar las dependencias
+python -m pip install -r requirements.txt
+```
+
+Si el entorno ya existe, basta con activarlo. Los comandos para ejecutar las pruebas y las mediciones están en el [apartado 8](#8-instrucciones-de-reproducción).
 
 ---
 
@@ -97,7 +114,7 @@ Pendiente para la entrega del 23 de noviembre
 
 ### 3.1. Interfaces y decisiones de implementación
 
-Los módulos del Integrante 2 utilizan `Lote = tuple[int, int, int]`, correspondiente a `(peso_kg, valor_nutricional, dias_para_vencer)`. Reciben `lotes: list[Lote]` y `capacidad_kg: int`; devuelven `tuple[int, list[int]]`: valor nutricional e índices originales en base cero, ascendentes y sin repeticiones.
+Las funciones de `exhaustivo.py` y `regla_actual.py` utilizan `Lote = tuple[int, int, int]`, correspondiente a `(peso_kg, valor_nutricional, dias_para_vencer)`. Reciben `lotes: list[Lote]` y `capacidad_kg: int`; devuelven `tuple[int, list[int]]`: valor nutricional e índices originales en base cero, ascendentes y sin repeticiones.
 
 | Módulo | Funciones y particularidades |
 |---|---|
@@ -105,7 +122,7 @@ Los módulos del Integrante 2 utilizan `Lote = tuple[int, int, int]`, correspond
 | [regla_actual.py](src/cargue_vehiculos/regla_actual.py) | `cargar_por_vencimiento(lotes, capacidad_kg)` y `cargar_por_densidad(lotes, capacidad_kg)`: conservan el orden de entrada en empates. La segunda compara razones exactamente con `Fraction`. |
 | [estrategia.py](src/cargue_vehiculos/estrategia.py) | `mochila_01(pesos, valores, capacidad)`: recibe listas separadas. Las pruebas extraen peso y valor de cada lote sin alterar su orden, para conservar la correspondencia de índices. |
 
-Las tres funciones del Integrante 2 no modifican la lista ni sus registros. Validan pesos enteros positivos, valores nutricionales enteros no negativos, días enteros y capacidad entera no negativa; rechazan booleanos como enteros. Las reglas reutilizan la validación de `exhaustivo.py`, sin ejecutar la búsqueda exhaustiva. Los candidatos deben ser aptos para despacho: estas funciones no filtran lotes vencidos.
+La solución exhaustiva y las dos reglas no modifican la lista ni sus registros. Validan pesos enteros positivos, valores nutricionales enteros no negativos, días enteros y capacidad entera no negativa; rechazan booleanos como enteros. Las reglas reutilizan la validación de `exhaustivo.py`, sin ejecutar la búsqueda exhaustiva. Los candidatos deben ser aptos para despacho: estas funciones no filtran lotes vencidos.
 
 ### 3.2. Verificación
 
@@ -117,7 +134,7 @@ La suite de pruebas en [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila
 * 100 instancias con parámetros del caso (pesos de 20 a 600 kg, $W$ de 2.500 a 4.000 kg) comprobando que la mochila 0/1 no es inferior a `cargue_por_vencimiento` de `estrategia.py` en esas instancias.
 * Inmutabilidad de las listas de entrada y validación de tipos con `ValueError`.
 
-[pruebas_contraejemplos.py](src/cargue_vehiculos/pruebas_contraejemplos.py), del Integrante 2, ejecuta dos instancias fijas de seis y cinco lotes. Comprueba con aserciones:
+[pruebas_contraejemplos.py](src/cargue_vehiculos/pruebas_contraejemplos.py) ejecuta dos instancias fijas de seis y cinco lotes. Comprueba con aserciones:
 
 - Igualdad del valor óptimo entre `cargar_exhaustivo` y `mochila_01`, y valor estrictamente menor para la regla evaluada.
 - Peso dentro de la capacidad, índices originales enteros, ordenados y únicos, y valor reconstruido sumando los registros completos, sin fraccionamiento.
@@ -157,7 +174,7 @@ Sea $n$ el número de lotes y $W$ la capacidad entera en kilogramos. Las cotas s
 
 Se conservan las tablas temporales y las tres gráficas del aporte del Integrante 4. [medicion.py](src/cargue_vehiculos/medicion.py) usa semilla fija (`SEMILLA = 42`) y `time.perf_counter()`, excluye la generación de datos del cronómetro y toma el menor tiempo de varias repeticiones.
 
-**Alcance de las series actuales:** se miden `fuerza_bruta` de `medicion.py`, `mochila_01` y `cargue_por_vencimiento` de `estrategia.py`. Esta última supone entradas previamente ordenadas y no recibe fechas; el generador actual produce únicamente pesos y valores. Los tiempos no corresponden a `cargar_exhaustivo`, `cargar_por_vencimiento` ni `cargar_por_densidad` del Integrante 2.
+**Alcance de las series actuales:** se miden `fuerza_bruta` de `medicion.py`, `mochila_01` y `cargue_por_vencimiento` de `estrategia.py`. Esta última supone entradas previamente ordenadas y no recibe fechas; el generador actual produce únicamente pesos y valores. Los tiempos no corresponden a `cargar_exhaustivo`, `cargar_por_vencimiento` ni `cargar_por_densidad` de los módulos `exhaustivo.py` y `regla_actual.py`.
 
 Los conteos publicados se contrastaron con el generador y las funciones actuales. Los tiempos dependen del equipo y están redondeados; se requiere conservar la salida original con suficiente precisión para auditar las razones de tiempo por celda.
 
@@ -362,27 +379,24 @@ Pendiente para la entrega del 23 de noviembre
 
 ## 8. Instrucciones de reproducción
 
-Ejecutar desde la raíz del repositorio en WSL Ubuntu. El entorno local comprobado es `.venvAnalisis`, con Python 3.14.7; los comandos siguientes no requieren activarlo ni renombrarlo. Las dependencias se declaran en [requirements.txt](requirements.txt).
+Desde la raíz del repositorio, con el entorno `.venvAnalisis` activado. Se utilizó Python 3.14.7 y las dependencias de [requirements.txt](requirements.txt).
 
 ```bash
-# Instalar las dependencias si no están disponibles en el entorno
-.venvAnalisis/bin/python -m pip install -r requirements.txt
+# Pruebas de mochila
+python -B src/cargue_vehiculos/pruebas_mochila.py
 
-# Suite de mochila existente
-.venvAnalisis/bin/python -B src/cargue_vehiculos/pruebas_mochila.py
-
-# Contraejemplos del Integrante 2
-.venvAnalisis/bin/python -B src/cargue_vehiculos/pruebas_contraejemplos.py
+# Contraejemplos de vencimiento y densidad
+python -B src/cargue_vehiculos/pruebas_contraejemplos.py
 ```
 
 Ambas suites se ejecutaron correctamente. La segunda imprime tablas de lotes, selecciones, pesos, valores y diferencias. Debe ejecutarse sin `-O`, para conservar las aserciones.
 
 ```bash
-# Mediciones del Integrante 4: regenera las tres imágenes existentes
-.venvAnalisis/bin/python -B src/cargue_vehiculos/medicion.py
+# Ejecutar mediciones y generar las tres gráficas
+python -B src/cargue_vehiculos/medicion.py
 ```
 
-Se verificó el flujo completo de mediciones y generación de imágenes redirigiendo la escritura de los PNG a memoria, para conservar las gráficas versionadas. Los nuevos tiempos de esa comprobación no sustituyen las tablas del informe. La ejecución directa del último comando sí sobrescribe las imágenes; su actualización definitiva corresponde al Integrante 4.
+El último comando sobrescribe las tres gráficas existentes. La actualización de las mediciones está pendiente, como se indica en la sección 4.5.
 
 ### 8.1. Exportación del informe a PDF
 
