@@ -45,7 +45,7 @@ from datos import (
     generar_ruta,
     valor_nutricional,
 )
-from estrategia import mochila_01
+from estrategia import cargar_vehiculo
 from exhaustivo import cargar_exhaustivo
 from regla_actual import cargar_por_densidad, cargar_por_vencimiento
 
@@ -61,22 +61,8 @@ RUTAS_REALES = 3
 # Utilidades de verificación
 # ---------------------------------------------------------------------------
 
-def dp_sobre_lotes(lotes: list[Lote], capacidad_kg: int) -> Solucion:
-    """Adapta ``mochila_01`` a la interfaz de lista de tuplas.
-
-    Args:
-        lotes: Tuplas ``(peso_kg, valor_nutricional, dias_para_vencer)``.
-        capacidad_kg: Capacidad del vehículo en kg.
-
-    Returns:
-        Tupla ``(valor, indices)`` de la mochila 0/1.
-    """
-    pesos, valores = a_listas(lotes)
-    return mochila_01(pesos, valores, capacidad_kg)
-
-
 ALGORITMOS: dict[str, Algoritmo] = {
-    "DP": dp_sobre_lotes,
+    "DP": cargar_vehiculo,
     "Exhaustiva": cargar_exhaustivo,
     "Vencimiento": cargar_por_vencimiento,
     "Densidad": cargar_por_densidad,
@@ -115,7 +101,9 @@ def verificar_cargue(
     )
 
 
-def ejecutar_todos(lotes: list[Lote], capacidad_kg: int) -> dict[str, Solucion]:
+def ejecutar_todos(
+    lotes: list[Lote], capacidad_kg: int
+) -> dict[str, Solucion]:
     """Ejecuta los cuatro algoritmos, verifica cada salida y la inmutabilidad.
 
     Args:
@@ -134,7 +122,9 @@ def ejecutar_todos(lotes: list[Lote], capacidad_kg: int) -> dict[str, Solucion]:
     return resultados
 
 
-def verificar_optimo(lotes: list[Lote], capacidad_kg: int) -> dict[str, Solucion]:
+def verificar_optimo(
+    lotes: list[Lote], capacidad_kg: int
+) -> dict[str, Solucion]:
     """Verifica que DP = exhaustiva y que las reglas no superen el óptimo.
 
     Args:
@@ -202,7 +192,10 @@ def probar_filtrado_de_vencidos() -> None:
     """Ningún lote vencido llega a los candidatos y el original no cambia."""
     inventario = generar_inventario(3000, 21, incluir_vencidos=True)
     copia = list(inventario)
-    vencidos = [l for l in inventario if dias_para_vencer(l, FECHA_DESPACHO) < 0]
+    vencidos = [
+        lote for lote in inventario
+        if dias_para_vencer(lote, FECHA_DESPACHO) < 0
+    ]
     assert vencidos, "el inventario de prueba debe incluir lotes vencidos"
 
     aptos = filtrar_aptos(inventario, FECHA_DESPACHO)
@@ -212,10 +205,9 @@ def probar_filtrado_de_vencidos() -> None:
 
     tuplas = a_tuplas(aptos, FECHA_DESPACHO)
     for nombre, algoritmo in ALGORITMOS.items():
-        if nombre == "Exhaustiva":
-            continue
-        _, indices = algoritmo(tuplas, 3000)
-        assert all(tuplas[i][2] >= 0 for i in indices), (
+        candidatos = tuplas[:8] if nombre == "Exhaustiva" else tuplas
+        _, indices = algoritmo(candidatos, 3000)
+        assert all(candidatos[i][2] >= 0 for i in indices), (
             f"{nombre} despachó un lote vencido"
         )
 
@@ -263,6 +255,36 @@ def probar_casos_limite() -> None:
         )
 
 
+def probar_ejemplo_manual() -> None:
+    """Verifica cada fila del ejemplo manual de cuatro lotes del informe."""
+    lotes: list[Lote] = [(5, 10, 1), (4, 7, 2), (3, 5, 3), (2, 4, 4)]
+    filas = [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 10, 10, 10],
+        [0, 0, 0, 0, 7, 10, 10, 10],
+        [0, 0, 0, 5, 7, 10, 10, 12],
+        [0, 0, 4, 5, 7, 10, 11, 14],
+    ]
+    for i, fila in enumerate(filas):
+        for capacidad, esperado in enumerate(fila):
+            assert cargar_vehiculo(lotes[:i], capacidad)[0] == esperado
+    resultados = verificar_optimo(lotes, 7)
+    assert resultados["DP"] == resultados["Exhaustiva"] == (14, [0, 3])
+    assert resultados["Vencimiento"] == (10, [0])
+
+
+def probar_desempates() -> None:
+    """Comprueba estabilidad de las reglas y selección entre óptimos."""
+    assert cargar_por_vencimiento([(2, 3, 1), (2, 9, 1)], 2) == (3, [0])
+    assert cargar_por_densidad([(2, 4, 1), (3, 6, 2)], 3) == (4, [0])
+    assert cargar_exhaustivo([(2, 5, 1), (2, 5, 2)], 2) == (5, [0])
+    assert cargar_vehiculo([(2, 5, 1), (2, 5, 2)], 2) == (5, [0])
+    # La exhaustiva prioriza menos lotes; DP puede elegir otro óptimo.
+    lotes: list[Lote] = [(1, 2, 1), (1, 3, 2), (2, 5, 3)]
+    assert cargar_exhaustivo(lotes, 2) == (5, [2])
+    assert cargar_vehiculo(lotes, 2)[0] == 5
+
+
 def probar_excepciones() -> None:
     """Entradas inválidas lanzan ValueError en todas las interfaces."""
     invalidas: list[tuple[list[Lote], int]] = [
@@ -270,8 +292,10 @@ def probar_excepciones() -> None:
         ([(0, 1, 1)], 5),           # peso no positivo
         ([(1, -1, 1)], 5),          # valor negativo
         ([(1.5, 1, 1)], 5),         # type: ignore[list-item]  peso no entero
-        ([(1, 1, 1)], 5.0),         # type: ignore[list-item]  capacidad no entera
+        ([(1, 1, 1)], 5.0),         # type: ignore[list-item]
         ([(True, 1, 1)], 5),        # booleano como entero
+        ([(1, 1, "hoy")], 5),      # type: ignore[list-item]
+        ([(1, 1)], 5),             # type: ignore[list-item]
     ]
     for lotes, capacidad in invalidas:
         for nombre, algoritmo in ALGORITMOS.items():
@@ -363,6 +387,8 @@ PRUEBAS: list[Callable[[], None]] = [
     probar_filtrado_de_vencidos,
     probar_adaptadores,
     probar_casos_limite,
+    probar_ejemplo_manual,
+    probar_desempates,
     probar_excepciones,
     probar_aleatorias_contra_exhaustiva,
     probar_rutas_tamano_real,

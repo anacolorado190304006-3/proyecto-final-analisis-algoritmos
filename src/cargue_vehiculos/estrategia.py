@@ -6,6 +6,38 @@ o no sube.
 """
 
 
+if __package__:
+    from .exhaustivo import Lote, _validar_entradas
+else:
+    from exhaustivo import Lote, _validar_entradas
+
+
+def cargar_vehiculo(
+    lotes: list[Lote], capacidad_kg: int
+) -> tuple[int, list[int]]:
+    """Resuelve el cargue 0/1 mediante la programación dinámica existente.
+
+    Los candidatos deben haberse filtrado como aptos antes del cargue.
+    Se conservan el orden y los registros originales. La adaptación cuesta
+    O(n); la DP usa Theta(n * W) tiempo y memoria para n, W >= 1.
+    En empates, la DP conserva la alternativa sin el lote que está evaluando.
+
+    Args:
+        lotes: Tuplas (peso_kg, valor_nutricional, dias_para_vencer).
+        capacidad_kg: Capacidad entera no negativa del vehículo, en kg.
+
+    Returns:
+        Valor nutricional máximo e índices originales en orden ascendente.
+
+    Raises:
+        ValueError: Si la entrada incumple el formato o los rangos válidos.
+    """
+    _validar_entradas(lotes, capacidad_kg)
+    pesos = [lote[0] for lote in lotes]
+    valores = [lote[1] for lote in lotes]
+    return mochila_01(pesos, valores, capacidad_kg)
+
+
 def _validar(pesos: list[int], valores: list[int], capacidad: int) -> None:
     """Valida las entradas de las funciones de cargue.
 

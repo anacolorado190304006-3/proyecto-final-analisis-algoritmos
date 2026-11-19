@@ -1,336 +1,403 @@
-"""Mediciones, conteo de operaciones, gráficas y extrapolación energética.
+"""Experimentos reproducibles de cargue: tiempos medios, conteos y energía."""
 
-Integrante 4 — Mediciones, gráficas e integración [Experimentos].
-Módulo de experimentos para la Operación 3: Cargue de vehículos (Caso 3).
-"""
-import os
-import random
+import argparse
+import hashlib
+import inspect
+import json
+import math
+import platform
+import statistics
+import sys
 import time
-from itertools import combinations
-import matplotlib.pyplot as plt
+from collections.abc import Callable
+from datetime import datetime, timezone
+from pathlib import Path
+from types import FrameType
+from typing import Any
 
-from estrategia import cargue_por_vencimiento, mochila_01
+import matplotlib
 
-# Parámetros del caso del cliente
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+
+from datos import a_tuplas, generar_inventario, generar_ruta
+from estrategia import cargar_vehiculo, mochila_01
+from exhaustivo import Lote, cargar_exhaustivo
+from pruebas import verificar_cargue
+from regla_actual import cargar_por_densidad, cargar_por_vencimiento
+
 SEMILLA = 42
-REPETICIONES = 3
-POTENCIA_W = 150.0  # Consumo sostenido del servidor del cliente (W)
+REPETICIONES = 5
+POTENCIA_W = 150.0
 DIAS_ANIO = 300
 VEHICULOS = 14
-CAPACIDAD_FIJA = 4000  # Capacidad máxima típica de un camión (kg)
+CAPACIDAD_FIJA = 4000
 TAMANOS_GRANDES = [50, 100, 200, 400, 600, 1000, 2000]
+TAMANOS_EXHAUSTIVO = [4, 6, 8, 10, 12, 14, 16, 18]
 N_FIJO = 400
 CAPACIDADES = [500, 1000, 2000, 4000, 8000]
-
-# Tamaños donde la solución exhaustiva (fuerza bruta) puede correr en segundos
-TAMANOS_EXHAUSTIVO = [4, 6, 8, 10, 12, 14, 16, 18]
-
-CARPETA_ACTUAL = os.path.dirname(os.path.abspath(__file__))
-CARPETA_GRAFICAS = os.path.abspath(
-    os.path.join(CARPETA_ACTUAL, "..", "..", "graficas", "cargue_vehiculos")
+CARPETA_GRAFICAS = Path(__file__).resolve().parents[2] / (
+    "graficas/cargue_vehiculos"
 )
+ARCHIVO_RESULTADOS = CARPETA_GRAFICAS / "resultados.json"
+
+Algoritmo = Callable[[list[Lote], int], tuple[int, list[int]]]
+ALGORITMOS: dict[str, Algoritmo] = {
+    "DP": cargar_vehiculo,
+    "Exhaustiva": cargar_exhaustivo,
+    "Vencimiento": cargar_por_vencimiento,
+    "Densidad": cargar_por_densidad,
+}
+# Se cuentan ejecuciones reales de una operación identificable de cada función.
+OPERACIONES = {
+    "DP": (mochila_01, "candidato = mejor[w - peso] + valor"),
+    "Exhaustiva": (cargar_exhaustivo, "peso_total = sum("),
+    "Vencimiento": (cargar_por_vencimiento,
+                   "if peso_total + peso > capacidad_kg:"),
+    "Densidad": (cargar_por_densidad,
+                 "if peso_total + peso > capacidad_kg:"),
+}
+NOMBRES_RAPIDOS = ("DP", "Vencimiento", "Densidad")
 
 
-def generar_lotes(n: int, semilla: int = SEMILLA) -> tuple[list[int], list[int]]:
-    """Genera n lotes candidatos sintéticos con semilla fija.
+def contar_operaciones(
+    nombre: str, lotes: list[Lote], capacidad: int
+) -> int:
+    """Cuenta celdas, subconjuntos o comparaciones en una ejecución aparte.
+
+    La traza no participa en el cronometraje. Los conteos no incluyen todas
+    las operaciones: en las reglas se cuentan comparaciones de capacidad,
+    no las comparaciones internas de sorted ni la validación.
 
     Args:
-        n: Cantidad de lotes candidatos.
-        semilla: Semilla fija para reproducibilidad.
+        nombre: Clave del algoritmo.
+        lotes: Candidatos elegibles.
+        capacidad: Capacidad en kg.
 
     Returns:
-        Tupla con las listas de pesos (kg) y valores nutricionales (raciones).
+        Número de ejecuciones de la línea observada.
+
+    Raises:
+        ValueError: Si cambió el código observado o la exhaustiva es grande.
     """
-    azar = random.Random(semilla)
-    pesos = [azar.randint(20, 600) for _ in range(n)]
-    valores = [p * azar.randint(2, 12) for p in pesos]
-    return pesos, valores
+    if nombre == "Exhaustiva" and len(lotes) > 18:
+        raise ValueError("El experimento exhaustivo admite hasta 18 lotes.")
+    funcion, fragmento = OPERACIONES[nombre]
+    fuente, inicio = inspect.getsourcelines(funcion)
+    lineas = [
+        inicio + i for i, linea in enumerate(fuente)
+        if fragmento in linea
+    ]
+    if len(lineas) != 1:
+        raise ValueError("Revisar la operación observada tras cambiar código.")
+    contador = 0
+
+    def traza(frame: FrameType, evento: str, arg: Any) -> Any:
+        """Incrementa el contador al ejecutar la línea del algoritmo.
+
+        Args:
+            frame: Marco de ejecución.
+            evento: Evento emitido por el intérprete.
+            arg: Información adicional del evento.
+
+        Returns:
+            La traza local para la función observada, o None.
+        """
+        nonlocal contador
+        if frame.f_code is funcion.__code__:
+            if evento == "line" and frame.f_lineno == lineas[0]:
+                contador += 1
+            return traza
+        return None
+
+    anterior = sys.gettrace()
+    try:
+        sys.settrace(traza)
+        ALGORITMOS[nombre](lotes, capacidad)
+    finally:
+        sys.settrace(anterior)
+    if nombre == "DP":
+        assert contador == sum(max(0, capacidad - p + 1) for p, _, _ in lotes)
+    elif nombre == "Exhaustiva":
+        assert contador == 2 ** len(lotes)
+    else:
+        assert 0 <= contador <= len(lotes)
+    return contador
 
 
-def fuerza_bruta(
-    pesos: list[int], valores: list[int], capacidad: int
-) -> tuple[int, list[int]]:
-    """Solución exhaustiva que prueba todas las combinaciones 2^n.
+def cronometrar(
+    funcion: Algoritmo, lotes: list[Lote], capacidad: int
+) -> list[float]:
+    """Mide cinco ejecuciones sin generación, validación externa ni traza.
 
     Args:
-        pesos: Peso de cada lote.
-        valores: Valor de cada lote.
-        capacidad: Capacidad máxima del vehículo.
+        funcion: Solución que recibe lotes y capacidad.
+        lotes: Misma instancia para todas las soluciones.
+        capacidad: Capacidad en kg.
 
     Returns:
-        Tupla (mejor_valor, indices_elegidos).
+        Tiempos individuales en segundos; se publica su media aritmética.
     """
-    n = len(pesos)
-    mejor_valor = 0
-    mejores_indices: list[int] = []
-    for r in range(n + 1):
-        for combo in combinations(range(n), r):
-            peso_actual = sum(pesos[i] for i in combo)
-            if peso_actual <= capacidad:
-                valor_actual = sum(valores[i] for i in combo)
-                if valor_actual > mejor_valor:
-                    mejor_valor = valor_actual
-                    mejores_indices = list(combo)
-    return mejor_valor, mejores_indices
-
-
-# ==============================================================================
-# CONTEO DE OPERACIONES ELEMENTALES
-# ==============================================================================
-
-def celdas_evaluadas_mochila(pesos: list[int], capacidad: int) -> int:
-    """Cuenta el número de celdas de la tabla evaluadas por la mochila 0/1.
-
-    Fórmula: sum(max(0, capacidad - peso_i + 1) for peso_i in pesos).
-    Complejidad: Theta(n * W).
-    """
-    return sum(max(0, capacidad - p + 1) for p in pesos)
-
-
-def operaciones_fuerza_bruta(n: int) -> int:
-    """Calcula el número de combinaciones de subconjuntos evaluados.
-
-    Fórmula: 2^n combinaciones. Complejidad: Theta(2^n).
-    """
-    return 2**n
-
-
-def operaciones_vencimiento(pesos: list[int], capacidad: int) -> int:
-    """Cuenta las comparaciones lineales realizadas por el cargue por vencimiento.
-
-    Se detiene en el primer lote que no cabe.
-    """
-    peso_acumulado = 0
-    ops = 0
-    for p in pesos:
-        ops += 1
-        if peso_acumulado + p <= capacidad:
-            peso_acumulado += p
-        else:
-            break
-    return ops
-
-
-# ==============================================================================
-# MEDICIONES DE TIEMPO
-# ==============================================================================
-
-def cronometrar(funcion, *args, repeticiones: int = REPETICIONES) -> float:
-    """Mide el menor tiempo de ejecución en segundos tras varias repeticiones."""
-    mejor = float("inf")
-    for _ in range(repeticiones):
+    tiempos = []
+    for _ in range(REPETICIONES):
         inicio = time.perf_counter()
-        funcion(*args)
-        mejor = min(mejor, time.perf_counter() - inicio)
-    return mejor
+        funcion(lotes, capacidad)
+        tiempos.append(time.perf_counter() - inicio)
+    return tiempos
 
 
-def experimento_tres_soluciones() -> tuple[list[int], list[float], list[float], list[float], list[int], list[int], list[int]]:
-    """Mide tiempo y operaciones de las tres soluciones para n pequeño."""
-    tiempos_fb: list[float] = []
-    tiempos_dp: list[float] = []
-    tiempos_venc: list[float] = []
+def medir_instancia(
+    n: int, capacidad: int, nombres: tuple[str, ...], semilla: int = SEMILLA
+) -> dict[str, Any]:
+    """Genera, valida y mide una instancia común a las estrategias.
 
-    ops_fb: list[int] = []
-    ops_dp: list[int] = []
-    ops_venc: list[int] = []
+    Args:
+        n: Cantidad de candidatos.
+        capacidad: Capacidad en kg.
+        nombres: Estrategias incluidas.
+        semilla: Semilla del generador de datos.
 
-    w_pequeno = 1000
-    for n in TAMANOS_EXHAUSTIVO:
-        pesos, valores = generar_lotes(n, SEMILLA + n)
+    Returns:
+        Datos de reproducción, tiempos, conteos y selecciones comprobadas.
 
-        t_fb = cronometrar(fuerza_bruta, pesos, valores, w_pequeno, repeticiones=2)
-        t_dp = cronometrar(mochila_01, pesos, valores, w_pequeno, repeticiones=3)
-        t_venc = cronometrar(cargue_por_vencimiento, pesos, valores, w_pequeno, repeticiones=5)
+    Raises:
+        ValueError: Si se solicita exhaustiva con más de 18 lotes.
+        AssertionError: Si las salidas incumplen las restricciones.
+    """
+    if "Exhaustiva" in nombres and n > 18:
+        raise ValueError("No ejecutar exhaustiva en instancias grandes.")
+    registros = generar_inventario(n, semilla, incluir_vencidos=False)
+    lotes = a_tuplas(registros)
+    copia = list(lotes)
+    salidas = {}
+    for nombre in nombres:
+        salidas[nombre] = ALGORITMOS[nombre](lotes, capacidad)
+        verificar_cargue(lotes, capacidad, salidas[nombre], nombre)
+        assert lotes == copia
+    if "Exhaustiva" in nombres:
+        assert salidas["DP"][0] == salidas["Exhaustiva"][0]
+    for nombre in nombres:
+        assert salidas[nombre][0] <= salidas["DP"][0]
 
-        tiempos_fb.append(t_fb)
-        tiempos_dp.append(t_dp)
-        tiempos_venc.append(t_venc)
-
-        ops_fb.append(operaciones_fuerza_bruta(n))
-        ops_dp.append(celdas_evaluadas_mochila(pesos, w_pequeno))
-        ops_venc.append(operaciones_vencimiento(pesos, w_pequeno))
-
-        print(
-            f"Comparativa 3 soluciones | n={n:2d} | "
-            f"Exhaustivo: {t_fb*1000:9.3f} ms ({ops_fb[-1]:7,d} ops) | "
-            f"Mochila DP: {t_dp*1000:7.3f} ms ({ops_dp[-1]:6,d} celdas) | "
-            f"Vencimiento: {t_venc*1000:6.4f} ms ({ops_venc[-1]:2d} ops)"
-        )
-
-    return (
-        TAMANOS_EXHAUSTIVO,
-        tiempos_fb,
-        tiempos_dp,
-        tiempos_venc,
-        ops_fb,
-        ops_dp,
-        ops_venc,
-    )
-
-
-def experimento_n_escalabilidad() -> tuple[list[int], list[float], list[float], list[int]]:
-    """Mide la escalabilidad de Mochila DP y Vencimiento para n grande (hasta 2.000)."""
-    tiempos_dp: list[float] = []
-    tiempos_venc: list[float] = []
-    celdas_dp: list[int] = []
-
-    for n in TAMANOS_GRANDES:
-        pesos, valores = generar_lotes(n, SEMILLA)
-        t_dp = cronometrar(mochila_01, pesos, valores, CAPACIDAD_FIJA)
-        t_venc = cronometrar(cargue_por_vencimiento, pesos, valores, CAPACIDAD_FIJA)
-        c = celdas_evaluadas_mochila(pesos, CAPACIDAD_FIJA)
-
-        tiempos_dp.append(t_dp)
-        tiempos_venc.append(t_venc)
-        celdas_dp.append(c)
-
-        print(
-            f"Escalabilidad | n={n:5d} W={CAPACIDAD_FIJA} | "
-            f"t_dp={t_dp:7.4f} s | celdas={c:9,d} | "
-            f"ns/celda={t_dp / c * 1e9:5.1f} ns | t_venc={t_venc*1e6:6.1f} us"
-        )
-    return TAMANOS_GRANDES, tiempos_dp, tiempos_venc, celdas_dp
-
-
-def experimento_capacidad() -> tuple[list[int], list[float], list[int]]:
-    """Mide con número de lotes fijo (n=400) y capacidad creciente W."""
-    pesos, valores = generar_lotes(N_FIJO, SEMILLA)
-    tiempos: list[float] = []
-    celdas: list[int] = []
-
-    for w in CAPACIDADES:
-        t = cronometrar(mochila_01, pesos, valores, w)
-        c = celdas_evaluadas_mochila(pesos, w)
-        tiempos.append(t)
-        celdas.append(c)
-        print(f"Capacidad W | n={N_FIJO} W={w:5d} kg | t={t:7.4f} s | celdas={c:9,d} | ns/celda={t / c * 1e9:5.1f} ns")
-
-    return CAPACIDADES, tiempos, celdas
-
-
-# ==============================================================================
-# GENERACIÓN DE LAS TRES GRÁFICAS EXIGIDAS
-# ==============================================================================
-
-def generar_grafica_tiempo_vs_n(
-    n_peq: list[int], t_fb: list[float], t_dp_peq: list[float], t_venc_peq: list[float]
-) -> None:
-    """Genera tiempo_vs_n.png con las tres soluciones en los mismos ejes."""
-    os.makedirs(CARPETA_GRAFICAS, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(9, 5.5))
-
-    ax.plot(n_peq, [t * 1000 for t in t_fb], "ro-", label="Exhaustivo / Fuerza Bruta $\\Theta(n \\cdot 2^n)$", linewidth=2)
-    ax.plot(n_peq, [t * 1000 for t in t_dp_peq], "bs-", label="Mochila 0/1 (Prog. Dinámica) $\\Theta(n \\cdot W)$", linewidth=2)
-    ax.plot(n_peq, [t * 1000 for t in t_venc_peq], "g^-", label="Cargue actual por vencimiento $\\Theta(n)$", linewidth=2)
-
-    ax.set_title("Operación 3: Tiempo de ejecución vs. Número de lotes candidatos ($n$)")
-    ax.set_xlabel("Número de lotes candidatos ($n$)")
-    ax.set_ylabel("Tiempo de ejecución (milisegundos)")
-    ax.grid(True, linestyle="--", alpha=0.7)
-    ax.legend()
-    fig.tight_layout()
-
-    ruta = os.path.join(CARPETA_GRAFICAS, "tiempo_vs_n.png")
-    fig.savefig(ruta, dpi=150)
-    plt.close(fig)
-    print(f"Gráfica 1 guardada: {ruta}")
-
-
-def generar_grafica_operaciones_vs_n(
-    n_peq: list[int], ops_fb: list[int], ops_dp: list[int], ops_venc: list[int]
-) -> None:
-    """Genera operaciones_vs_n.png con el conteo de operaciones elementales."""
-    os.makedirs(CARPETA_GRAFICAS, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(9, 5.5))
-
-    ax.plot(n_peq, ops_fb, "ro-", label="Exhaustivo: Subconjuntos evaluados $2^n$", linewidth=2)
-    ax.plot(n_peq, ops_dp, "bs-", label="Mochila 0/1: Celdas evaluadas $\\Theta(n \\cdot W)$", linewidth=2)
-    ax.plot(n_peq, ops_venc, "g^-", label="Vencimiento: Comparaciones lineales $\\Theta(n)$", linewidth=2)
-
-    ax.set_title("Operación 3: Operaciones elementales vs. Número de lotes ($n$)")
-    ax.set_xlabel("Número de lotes candidatos ($n$)")
-    ax.set_ylabel("Número de operaciones / celdas evaluadas")
-    ax.set_yscale("log")  # Escala logarítmica para apreciar la brecha exponencial
-    ax.grid(True, linestyle="--", alpha=0.7)
-    ax.legend()
-    fig.tight_layout()
-
-    ruta = os.path.join(CARPETA_GRAFICAS, "operaciones_vs_n.png")
-    fig.savefig(ruta, dpi=150)
-    plt.close(fig)
-    print(f"Gráfica 2 guardada: {ruta}")
-
-
-def generar_grafica_tiempo_vs_capacidad(capacidades: list[int], tiempos: list[float]) -> None:
-    """Genera tiempo_vs_capacidad.png con n=400 fijo y W creciente."""
-    os.makedirs(CARPETA_GRAFICAS, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(9, 5.5))
-
-    ax.plot(capacidades, tiempos, "bo-", label="Mochila 0/1 (Prog. Dinámica) $\\Theta(n \\cdot W)$", linewidth=2)
-
-    ax.set_title("Operación 3: Tiempo vs. Capacidad del vehículo $W$ ($n = 400$ lotes fijos)")
-    ax.set_xlabel("Capacidad del vehículo $W$ (kilogramos)")
-    ax.set_ylabel("Tiempo de ejecución (segundos)")
-    ax.grid(True, linestyle="--", alpha=0.7)
-    ax.legend()
-    fig.tight_layout()
-
-    ruta = os.path.join(CARPETA_GRAFICAS, "tiempo_vs_capacidad.png")
-    fig.savefig(ruta, dpi=150)
-    plt.close(fig)
-    print(f"Gráfica 3 guardada: {ruta}")
-
-
-# ==============================================================================
-# EXTRAPOLACIÓN DE TIEMPO Y ENERGÍA
-# ==============================================================================
-
-def calcular_extrapolacion_energia(ns_por_celda: float) -> dict[str, float]:
-    """Calcula las extrapolaciones de tiempo y energía en el volumen real."""
-    celdas_por_vehiculo = 600 * 4000  # Peor caso: 600 lotes y 4.000 kg
-    segundos_por_vehiculo = (celdas_por_vehiculo * ns_por_celda) / 1e9
-    segundos_diarios = segundos_por_vehiculo * VEHICULOS
-    energia_wh_dia = POTENCIA_W * (segundos_diarios / 3600)
-    energia_kwh_anual = (energia_wh_dia * DIAS_ANIO) / 1000
-    segundos_2da_bodega = segundos_diarios * 2
-
+    resultados = {}
+    for nombre in nombres:
+        tiempos = cronometrar(ALGORITMOS[nombre], lotes, capacidad)
+        assert lotes == copia
+        valor, indices = salidas[nombre]
+        resultados[nombre] = {
+            "tiempos_s": tiempos,
+            "media_s": statistics.mean(tiempos),
+            "operaciones": contar_operaciones(nombre, lotes, capacidad),
+            "valor": valor,
+            "peso_kg": sum(lotes[i][0] for i in indices),
+            "indices": indices,
+        }
+    huella = hashlib.sha256(json.dumps(lotes).encode()).hexdigest()
+    print(f"Validado y medido: n={n}, W={capacidad}", flush=True)
     return {
-        "segundos_vehiculo": segundos_por_vehiculo,
-        "segundos_diarios": segundos_diarios,
-        "energia_wh_dia": energia_wh_dia,
-        "energia_kwh_anual": energia_kwh_anual,
-        "segundos_2da_bodega": segundos_2da_bodega,
+        "n": n, "capacidad_kg": capacidad, "semilla": semilla,
+        "sha256_lotes": huella, "resultados": resultados,
     }
 
 
-def ejecutar_experimentos() -> None:
-    """Función principal que ejecuta todos los experimentos del Integrante 4."""
-    print("=== INTEGRANTE 4: EXPERIMENTOS DE MEDICIÓN, OPERACIONES Y ENERGÍA ===")
-    print("\n--- 1. Experimento: Medición de las tres soluciones (tiempo y operaciones) ---")
-    n_peq, t_fb, t_dp_peq, t_venc_peq, ops_fb, ops_dp, ops_venc = experimento_tres_soluciones()
+def extrapolar(
+    pequenas: list[dict[str, Any]], grandes: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Extrapola a 14 rutas de 600 lotes y capacidad de 4000 kg.
 
-    print("\n--- 2. Experimento: Escalabilidad de n grande (Mochila DP) ---")
-    n_g, t_dp_g, t_venc_g, celdas_g = experimento_n_escalabilidad()
+    Se calibra DP con nW, las reglas con n log2(n) y la exhaustiva con
+    n * 2**n. Son modelos, no ejecuciones ni mediciones eléctricas.
+    La potencia de 150 W se supone constante durante el cómputo.
 
-    print("\n--- 3. Experimento: Medición con n fijo (400) y capacidad W creciente ---")
-    caps, t_caps, celdas_caps = experimento_capacidad()
+    Args:
+        pequenas: Mediciones con exhaustiva.
+        grandes: Mediciones de DP y reglas a mayor escala.
 
-    print("\n--- 4. Generando las tres gráficas exigidas ---")
-    generar_grafica_tiempo_vs_n(n_peq, t_fb, t_dp_peq, t_venc_peq)
-    generar_grafica_operaciones_vs_n(n_peq, ops_fb, ops_dp, ops_venc)
-    generar_grafica_tiempo_vs_capacidad(caps, t_caps)
+    Returns:
+        Tiempos, energía y diferencia anual DP menos vencimiento.
+    """
+    salida = {}
+    for nombre in ALGORITMOS:
+        referencia = pequenas[-1] if nombre == "Exhaustiva" else grandes[-1]
+        n = referencia["n"]
+        w = referencia["capacidad_kg"]
+        t = referencia["resultados"][nombre]["media_s"]
+        if nombre == "DP":
+            factor = (600 * 4000) / (n * w)
+        elif nombre == "Exhaustiva":
+            factor = (600 / n) * 2.0 ** (600 - n)
+        else:
+            factor = (600 * math.log2(600)) / (n * math.log2(n))
+        segundos = t * factor
+        flota = segundos * VEHICULOS
+        diario = (POTENCIA_W / 1000) * (flota / 3600)
+        salida[nombre] = {
+            "referencia_n": n, "referencia_W": w, "referencia_s": t,
+            "factor": factor, "segundos_vehiculo": segundos,
+            "segundos_flota": flota, "kwh_dia": diario,
+            "kwh_anual": diario * DIAS_ANIO,
+        }
+    salida["diferencia_anual_dp_menos_vencimiento"] = (
+        salida["DP"]["kwh_anual"] - salida["Vencimiento"]["kwh_anual"]
+    )
+    return salida
 
-    print("\n--- 5. Extrapolación de tiempo y consumo de energía ---")
-    ns_por_celda = (t_dp_g[-1] / celdas_g[-1]) * 1e9
-    extrap = calcular_extrapolacion_energia(ns_por_celda)
-    print(f"Constante empírica (n=2000): {ns_por_celda:.1f} ns por celda")
-    print(f"Tiempo estimado por vehículo (600 lotes, 4.000 kg): {extrap['segundos_vehiculo']:.3f} s")
-    print(f"Tiempo diario para la flota (14 vehículos): {extrap['segundos_diarios']:.2f} s")
-    print(f"Consumo de energía diario (150 W): {extrap['energia_wh_dia']:.4f} Wh")
-    print(f"Consumo de energía anual (300 días): {extrap['energia_kwh_anual']:.5f} kWh")
-    print(f"Escenario de 2da bodega (28 vehículos): {extrap['segundos_2da_bodega']:.2f} s")
+
+def evaluar_flota() -> list[dict[str, Any]]:
+    """Compara el valor y la ocupación en catorce rutas sintéticas.
+
+    Returns:
+        Semillas, capacidades, lotes y resultados por ruta; no mide tiempos.
+    """
+    rutas = []
+    for numero in range(VEHICULOS):
+        semilla = SEMILLA + 100 + numero
+        registros, capacidad = generar_ruta(semilla)
+        lotes = a_tuplas(registros)
+        copia = list(lotes)
+        resultados = {}
+        for nombre in NOMBRES_RAPIDOS:
+            valor, indices = ALGORITMOS[nombre](lotes, capacidad)
+            verificar_cargue(lotes, capacidad, (valor, indices), nombre)
+            assert lotes == copia
+            resultados[nombre] = {
+                "valor": valor, "indices": indices,
+                "peso_kg": sum(lotes[i][0] for i in indices),
+            }
+        assert all(
+            r["valor"] <= resultados["DP"]["valor"]
+            for r in resultados.values()
+        )
+        rutas.append({
+            "ruta": numero, "semilla": semilla, "n": len(lotes),
+            "capacidad_kg": capacidad, "resultados": resultados,
+        })
+    return rutas
+
+
+def generar_graficas(datos: dict[str, Any]) -> None:
+    """Dibuja las tres gráficas a partir del mismo registro de resultados.
+
+    Args:
+        datos: Resultado guardado por ejecutar_experimentos.
+    """
+    CARPETA_GRAFICAS.mkdir(parents=True, exist_ok=True)
+    estilos = {
+        "DP": "bs-", "Exhaustiva": "ro-",
+        "Vencimiento": "g^-", "Densidad": "md-",
+    }
+    fig, ejes = plt.subplots(1, 2, figsize=(13, 5))
+    for ax, clave, titulo in zip(
+        ejes, ("pequenas", "grandes"),
+        ("Instancias pequeñas: W = 1000 kg", "Escalabilidad: W = 4000 kg"),
+    ):
+        filas = datos[clave]
+        for nombre in filas[0]["resultados"]:
+            ax.plot(
+                [r["n"] for r in filas],
+                [r["resultados"][nombre]["media_s"] * 1000 for r in filas],
+                estilos[nombre], label=nombre,
+            )
+        ax.set(xlabel="Número de lotes (n)", ylabel="Tiempo medio (ms)",
+               title=titulo, yscale="log")
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+    fig.suptitle("Cargue de vehículos: tiempo de las funciones completas")
+    fig.tight_layout()
+    fig.savefig(CARPETA_GRAFICAS / "tiempo_vs_n.png", dpi=150)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    unidades = {
+        "DP": "celdas", "Exhaustiva": "subconjuntos",
+        "Vencimiento": "comparaciones de capacidad",
+        "Densidad": "comparaciones de capacidad",
+    }
+    for nombre in ALGORITMOS:
+        filas = datos["pequenas"]
+        ax.plot(
+            [r["n"] for r in filas],
+            [r["resultados"][nombre]["operaciones"] for r in filas],
+            estilos[nombre], label=f"{nombre}: {unidades[nombre]}",
+        )
+    ax.set(xlabel="Número de lotes (n)", ylabel="Conteo (escala logarítmica)",
+           title="Cargue: celdas, subconjuntos y comparaciones; W = 1000 kg",
+           yscale="log")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(CARPETA_GRAFICAS / "operaciones_vs_n.png", dpi=150)
+    plt.close(fig)
+
+    filas = datos["capacidades"]
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.plot(
+        [r["capacidad_kg"] for r in filas],
+        [r["resultados"]["DP"]["media_s"] for r in filas],
+        "bo-", label="DP: cargar_vehiculo",
+    )
+    ax.set(xlabel="Capacidad del vehículo W (kg)",
+           ylabel="Tiempo medio (s)",
+           title="Cargue: tiempo frente a capacidad, n = 400 lotes")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(CARPETA_GRAFICAS / "tiempo_vs_capacidad.png", dpi=150)
+    plt.close(fig)
+
+
+def ejecutar_experimentos() -> dict[str, Any]:
+    """Mide, guarda evidencia y genera las gráficas.
+
+    Returns:
+        Registro completo de experimentos y proyecciones.
+    """
+    if not __debug__:
+        raise RuntimeError("Ejecutar sin -O para conservar los assert.")
+    datos = {
+        "entorno": {
+            "fecha_utc": datetime.now(timezone.utc).isoformat(),
+            "python": platform.python_version(),
+            "plataforma": platform.platform(),
+            "procesador": platform.processor(),
+            "repeticiones": REPETICIONES,
+            "estadistico": "media aritmetica",
+            "potencia_w": POTENCIA_W, "dias_anio": DIAS_ANIO,
+            "vehiculos": VEHICULOS, "semilla": SEMILLA,
+        },
+        "pequenas": [
+            medir_instancia(n, 1000, tuple(ALGORITMOS))
+            for n in TAMANOS_EXHAUSTIVO
+        ],
+        "grandes": [
+            medir_instancia(n, CAPACIDAD_FIJA, NOMBRES_RAPIDOS)
+            for n in TAMANOS_GRANDES
+        ],
+        "capacidades": [
+            medir_instancia(N_FIJO, w, ("DP",)) for w in CAPACIDADES
+        ],
+        "flota": evaluar_flota(),
+    }
+    datos["extrapolacion"] = extrapolar(datos["pequenas"], datos["grandes"])
+    CARPETA_GRAFICAS.mkdir(parents=True, exist_ok=True)
+    ARCHIVO_RESULTADOS.write_text(
+        json.dumps(datos, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    generar_graficas(datos)
+    print(f"Evidencia: {ARCHIVO_RESULTADOS}")
+    print(json.dumps(datos["extrapolacion"], ensure_ascii=False, indent=2))
+    return datos
 
 
 if __name__ == "__main__":
-    ejecutar_experimentos()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--solo-graficas", action="store_true",
+        help="Regenerar PNG desde resultados.json, sin volver a medir.",
+    )
+    argumentos = parser.parse_args()
+    if argumentos.solo_graficas:
+        generar_graficas(json.loads(ARCHIVO_RESULTADOS.read_text("utf-8")))
+    else:
+        ejecutar_experimentos()

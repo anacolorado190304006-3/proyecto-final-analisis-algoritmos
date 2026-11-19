@@ -285,13 +285,16 @@ def filtrar_aptos(
     Returns:
         Lista nueva con los lotes aptos.
     """
-    return [lote for lote in lotes if dias_para_vencer(lote, fecha_despacho) >= 0]
+    return [
+        lote for lote in lotes
+        if dias_para_vencer(lote, fecha_despacho) >= 0
+    ]
 
 
 def a_tuplas(
     lotes: list[RegistroLote], fecha_despacho: date = FECHA_DESPACHO
 ) -> list[Lote]:
-    """Convierte registros a ``(peso_kg, valor_nutricional, dias_para_vencer)``.
+    """Convierte registros a tuplas de peso, valor y días para vencer.
 
     Conserva el orden, de modo que el índice i de la salida corresponde al
     registro i de la entrada.

@@ -48,6 +48,17 @@ Si el entorno ya existe, basta con activarlo. Los comandos para ejecutar las pru
   4. Los datos de entrada no se modifican (inmutabilidad para conservar la trazabilidad sanitaria).
 * **Situación actual, según el caso de estudio:** El coordinador carga por orden de vencimiento (FEFO) hasta que el siguiente lote no cabe. Es un método voraz rápido, pero se detiene en el primer lote que no cabe y deja los camiones saliendo en promedio al **78 %** de su capacidad útil.
 
+**Supuestos de esta operación:** se usan pesos enteros positivos en kg,
+valores nutricionales no negativos y candidatos previamente filtrados como
+aptos. Un lote que vence el día del despacho se admite; los vencidos se
+excluyen con `filtrar_aptos`. Los pesos sintéticos (20–600 kg), las raciones
+(2–4 por kg) y las prioridades (3, 2 y 1) son supuestos del equipo, detallados
+en §3.2.1. En empates de vencimiento o densidad se conserva el orden original.
+La ocupación mide peso/capacidad y no sustituye el objetivo nutricional.
+La selección 0/1 y el orden sanitario de despacho son pasos distintos: los
+lotes elegidos deben salir por vencimiento dentro de cada categoría. El
+ordenamiento de bodega corresponde a la operación 2.
+
 ### 1.2. Análisis de las cuatro operaciones del banco
 
 Pendiente para la entrega del 23 de noviembre
@@ -62,7 +73,7 @@ El problema tiene **subestructura óptima** y **subproblemas que se repiten (tra
 
 * **Subestructura óptima:** Si el lote $i$ está en la solución óptima para la capacidad $w$, el resto debe ser óptimo para los primeros $i-1$ lotes con capacidad residual $w - \text{peso}_i$.
 * **Subproblemas traslapados:** Las mismas combinaciones de prefijo de lotes $i$ y capacidad residual $w$ se evalúan repetidamente. Sin memoria, una búsqueda exhaustiva revisa $2^n$ combinaciones; para $n = 600$, $2^{600} \approx 4 \times 10^{180}$, lo cual es completamente inviable.
-* **Falla de reglas voraces:** Una regla voraz (sea por orden de vencimiento o por densidad de valor/peso) no garantiza el óptimo con objetos indivisibles (mochila 0/1). Con el ejemplo de la sección 2.3, el cargue por vencimiento obtiene valor 10 y el óptimo es 12. Como el cliente exige el valor máximo exacto, la regla voraz no cumple.
+* **Falla de reglas voraces:** Una regla voraz (sea por orden de vencimiento o por densidad de valor/peso) no garantiza el óptimo con objetos indivisibles (mochila 0/1). Con el ejemplo de la sección 2.3, el cargue por vencimiento obtiene valor 10 y el óptimo es 14. Como el cliente exige el valor máximo exacto, la regla voraz no cumple.
 
 ### 2.2. Recurrencia
 
@@ -79,21 +90,37 @@ $$V[i][w] = \max\Big(V[i-1][w], \; V[i-1][w - \text{peso}_i] + \text{valor}_i\Bi
 
 ### 2.3. Ejemplo resuelto a mano
 
-Capacidad $W = 7$ kg; lotes (peso, valor): Lote 1 = (5, 10), Lote 2 = (4, 7), Lote 3 = (3, 5).
+Instancia reducida de cuatro lotes, con capacidad $W=7$ kg. Para el cálculo
+manual se numeran del 1 al 4; el código devuelve índices desde 0.
 
-| $i$ \ $w$ | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **0 (ninguno)** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **1 (+ Lote 1)** | 0 | 0 | 0 | 0 | 0 | 10 | 10 | 10 |
-| **2 (+ Lote 2)** | 0 | 0 | 0 | 0 | 7 | 10 | 10 | 10 |
-| **3 (+ Lote 3)** | 0 | 0 | 0 | 5 | 7 | 10 | 10 | **12** |
+| Lote | Peso (kg) | Valor nutricional | Días para vencer |
+|---|---:|---:|---:|
+| 1 | 5 | 10 | 1 |
+| 2 | 4 | 7 | 2 |
+| 3 | 3 | 5 | 3 |
+| 4 | 2 | 4 | 4 |
 
-* $V[3][7] = \max(V[2][7], V[2][4] + 5) = \max(10, 7 + 5) = 12$.
-* **Reconstrucción:** $V[3][7] \neq V[2][7]$ $\to$ se toma el lote 3 ($w$ pasa a $7 - 3 = 4$). $V[2][4] = 7 \neq V[1][4] = 0$ $\to$ se toma el lote 2 ($w$ pasa a $4 - 4 = 0$). Fin.
-* **Solución óptima:** Lotes 2 y 3 (peso $4 + 3 = 7$ kg), valor nutricional **12**.
-* **Contraste con regla actual:** El cargue por vencimiento sube el lote 1 (5 kg), el lote 2 ya no cabe, y obtiene valor **10**, dejando 2 kg sin utilizar.
+| $i$ / $w$ | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 1 | 0 | 0 | 0 | 0 | 0 | 10 | 10 | 10 |
+| 2 | 0 | 0 | 0 | 0 | 7 | 10 | 10 | 10 |
+| 3 | 0 | 0 | 0 | 5 | 7 | 10 | 10 | 12 |
+| 4 | 0 | 0 | 4 | 5 | 7 | 10 | 11 | **14** |
 
-En este ejemplo se supone que los lotes ya están en orden de vencimiento. Su numeración empieza en 1; los índices devueltos por el código y usados en los contraejemplos de la sección 5 empiezan en 0.
+1. Sin lotes, todos los valores son cero.
+2. El lote 1 aporta 10 desde capacidad 5. Con el lote 2, $V[2][4]=7$;
+   en capacidad 7 se conserva 10 porque los dos lotes pesan 9 kg.
+3. Al considerar el lote 3, $V[3][7]=\max(10,7+5)=12$.
+4. Con el lote 4, $V[4][7]=\max(V[3][7],V[3][5]+4)=\max(12,14)=14$.
+5. Reconstrucción: se toma el lote 4 y quedan 5 kg. Las filas 3 y 2 no
+   mejoran el valor de esa capacidad; se toma el lote 1 y quedan 0 kg.
+
+La solución es **lotes 1 y 4**, índices `[0, 3]`: 7 kg y valor 14.
+Vencimiento carga el lote 1 y se detiene ante el 2: valor 10 y 2 kg libres.
+`probar_ejemplo_manual` verifica cada celda de la tabla y contrasta el óptimo
+con la exhaustiva. El subcaso original de tres lotes se conserva en la suite
+de mochila.
 
 ### 2.4. Estrategias de contraste
 
@@ -115,15 +142,15 @@ Pendiente para la entrega del 23 de noviembre
 
 ### 3.1. Interfaces y decisiones de implementación
 
-Las funciones de `exhaustivo.py` y `regla_actual.py` utilizan `Lote = tuple[int, int, int]`, correspondiente a `(peso_kg, valor_nutricional, dias_para_vencer)`. Reciben `lotes: list[Lote]` y `capacidad_kg: int`; devuelven `tuple[int, list[int]]`: valor nutricional e índices originales en base cero, ascendentes y sin repeticiones.
+Las cuatro funciones de cargue utilizan `Lote = tuple[int, int, int]`, correspondiente a `(peso_kg, valor_nutricional, dias_para_vencer)`. Reciben `lotes: list[Lote]` y `capacidad_kg: int`; devuelven `tuple[int, list[int]]`: valor nutricional e índices originales en base cero, ascendentes y sin repeticiones.
 
 | Módulo | Funciones y particularidades |
 |---|---|
 | [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) | `cargar_exhaustivo(lotes, capacidad_kg)`: enumera por cantidad de lotes y luego por orden lexicográfico de índices. Entre óptimos empatados conserva el de menos lotes y, después, el menor orden lexicográfico. No almacena todos los subconjuntos. |
 | [regla_actual.py](src/cargue_vehiculos/regla_actual.py) | `cargar_por_vencimiento(lotes, capacidad_kg)` y `cargar_por_densidad(lotes, capacidad_kg)`: conservan el orden de entrada en empates. La segunda compara razones exactamente con `Fraction`. |
-| [estrategia.py](src/cargue_vehiculos/estrategia.py) | `mochila_01(pesos, valores, capacidad)`: recibe listas separadas. Las pruebas extraen peso y valor de cada lote sin alterar su orden, para conservar la correspondencia de índices. |
+| [estrategia.py](src/cargue_vehiculos/estrategia.py) | `cargar_vehiculo(lotes, capacidad_kg)`: valida las tuplas y adapta peso y valor a `mochila_01`, conservando la implementación y los índices. En empates, DP conserva la opción sin el lote evaluado; puede devolver otro óptimo que la exhaustiva. |
 
-La solución exhaustiva y las dos reglas no modifican la lista ni sus registros. Validan pesos enteros positivos, valores nutricionales enteros no negativos, días enteros y capacidad entera no negativa; rechazan booleanos como enteros. Las reglas reutilizan la validación de `exhaustivo.py`, sin ejecutar la búsqueda exhaustiva. Los candidatos deben ser aptos para despacho: estas funciones no filtran lotes vencidos.
+Las cuatro funciones no modifican la lista ni sus registros. Validan pesos enteros positivos, valores nutricionales enteros no negativos, días enteros y capacidad entera no negativa; rechazan booleanos como enteros. DP y las reglas reutilizan la validación de `exhaustivo.py`, sin ejecutar la búsqueda exhaustiva. Los candidatos deben ser aptos para despacho: estas funciones no filtran lotes vencidos.
 
 ### 3.2. Verificación
 
@@ -144,7 +171,7 @@ La suite de pruebas en [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila
 
 Se reutiliza `verificar_solucion` de la suite existente. Los resultados exactos aparecen en la sección 5; los contraejemplos no miden tiempos ni energía.
 
-#### 3.2.1. Datos — Integrante 3: Juan David Machado Mosquera
+#### 3.2.1. Datos sintéticos
 
 [datos.py](src/cargue_vehiculos/datos.py) genera lotes con la estructura entregada por el cliente. Cada lote es un `RegistroLote` inmutable (`dataclass(frozen=True)`) con `codigo_lote`, `categoria`, `fecha_vencimiento`, `peso_kg`, `raciones` y `donante`; intentar modificarlo lanza `FrozenInstanceError`, lo que protege la trazabilidad sanitaria del registro original.
 
@@ -164,14 +191,14 @@ El valor nutricional es `raciones × prioridad`, de modo que cada kilogramo apor
 |---|---|
 | `generar_inventario(n, semilla, fecha_despacho, incluir_vencidos)` | Inventario de `n` lotes con códigos únicos; puede incluir lotes vencidos para probar su exclusión. |
 | `generar_ruta(semilla, n)` | Candidatos aptos de una ruta y capacidad del vehículo, en los rangos del caso. |
-| `generar_instancia_pequena(n, semilla)` | Instancias de hasta 16 lotes con capacidad entre el 30 % y el 70 % del peso total, para contrastar con la exhaustiva. |
+| `generar_instancia_pequena(n, semilla)` | Instancias pequeñas (1–16 lotes en las pruebas), con límites de capacidad del 30 % y 70 % del peso total redondeados hacia abajo, para contrastar con la exhaustiva. |
 | `filtrar_aptos(lotes, fecha_despacho)` | Lista nueva sin los lotes vencidos; no modifica la entrada. |
 | `a_tuplas(lotes, fecha_despacho)` | Convierte a `Lote = (peso_kg, valor_nutricional, dias_para_vencer)` para `exhaustivo.py` y `regla_actual.py`. |
 | `a_listas(lotes)` | Separa pesos y valores para `mochila_01`, conservando los índices. |
 
 Cada generador usa su propio `random.Random(semilla)`: la misma semilla reproduce exactamente los mismos datos y no altera el estado global de `random`. La semilla base es `SEMILLA_BASE = 2026` y la fecha de despacho de referencia es el 18 de noviembre de 2026.
 
-#### 3.2.2. Suite consolidada — Integrante 3: Juan David Machado Mosquera
+#### 3.2.2. Suite consolidada
 
 [pruebas.py](src/cargue_vehiculos/pruebas.py) es el punto único de verificación del cargue. Ejecuta los cuatro algoritmos (DP, exhaustiva, vencimiento y densidad) con la misma interfaz y aplica a cada salida la función `verificar_cargue`. Esa función comprueba que los índices sean enteros, únicos, ordenados y válidos; que el peso no supere la capacidad; y que el valor sea exactamente la suma de los registros completos elegidos. Así se verifica que ningún lote se fraccione. También comprueba que ningún algoritmo modifique los lotes recibidos.
 
@@ -180,15 +207,17 @@ Cada generador usa su propio `random.Random(semilla)`: la misma semilla reproduc
 | `probar_reproducibilidad` | Misma semilla, mismos datos; semilla distinta, datos distintos. |
 | `probar_rangos_del_caso` | Pesos, categorías y códigos únicos en 2.000 lotes; 300 a 600 candidatos y 2.500 a 4.000 kg en 20 rutas, y que los candidatos no quepan todos en el vehículo. |
 | `probar_registros_inmutables` | El registro original no puede modificarse. |
-| `probar_filtrado_de_vencidos` | `filtrar_aptos` excluye todos los lotes vencidos sin alterar el inventario, y ningún algoritmo despacha un lote vencido. |
+| `probar_filtrado_de_vencidos` | Filtra sin modificar el inventario y verifica selecciones aptas: DP y reglas sobre el conjunto filtrado; exhaustiva sobre ocho candidatos. |
 | `probar_adaptadores` | `a_tuplas` y `a_listas` conservan el orden y la correspondencia de índices. |
 | `probar_casos_limite` | 14 casos con valor óptimo conocido, para los cuatro algoritmos: sin lotes, capacidad cero, nada cabe, todo cabe, ajuste exacto, un kilogramo de menos, capacidad igual al peso total y uno menos, valores cero, pesos iguales, empate de valor, lote de 1 kg, lote más pesado que el vehículo y lote que vence el día del despacho. |
-| `probar_excepciones` | Capacidad negativa, peso no positivo, valor negativo, números no enteros y booleanos lanzan `ValueError` en las cuatro interfaces. |
+| `probar_ejemplo_manual` | Todas las celdas del ejemplo de cuatro lotes y óptimo 14, índices `[0, 3]`. |
+| `probar_desempates` | Estabilidad por fecha y densidad; comportamiento de DP y exhaustiva entre óptimos. |
+| `probar_excepciones` | Capacidad negativa, peso no positivo, valor negativo, números no enteros, booleanos y tuplas mal formadas lanzan `ValueError` en las cuatro interfaces. |
 | `probar_aleatorias_contra_exhaustiva` | 40 instancias aleatorias (el mínimo exigido es 20) de 1 a 16 lotes, con semillas 1000 a 1039: la DP alcanza el mismo valor que `cargar_exhaustivo` y ninguna regla voraz lo supera. |
 | `probar_rutas_tamano_real` | 3 rutas de tamaño real: cargues válidos y DP con valor mayor o igual al de ambas reglas. La exhaustiva no se ejecuta a este tamaño ($2^{300}$ subconjuntos o más). |
 | `ejecutar_suites_previas` | Ejecuta todas las pruebas de `pruebas_mochila.py` y `pruebas_contraejemplos.py`, sin imprimir sus tablas. |
 
-**Resultados de la ejecución.** Las 10 pruebas pasaron en unos 2 segundos con Python 3.13.1. En las 40 instancias aleatorias la DP coincidió con la exhaustiva; la regla por vencimiento quedó por debajo del óptimo en 34 de ellas. En las tres rutas de tamaño real, la DP ocupó el 100 % de la capacidad del vehículo:
+**Resultados de la ejecución.** Los 12 grupos de pruebas pasaron con Python 3.14.7. En las 40 instancias aleatorias la DP coincidió con la exhaustiva; la regla por vencimiento quedó por debajo del óptimo en 34 de ellas. En las tres rutas de tamaño real, la DP ocupó el 100 % de la capacidad del vehículo:
 
 | Ruta (semilla) | Lotes candidatos | Capacidad (kg) | Peso cargado por DP (kg) | Ocupación |
 |---|---|---|---|---|
@@ -198,7 +227,7 @@ Cada generador usa su propio `random.Random(semilla)`: la misma semilla reproduc
 
 Estas ocupaciones dependen de los datos sintéticos, que contienen muchos lotes pequeños; no son una medición sobre datos reales del banco. Sirven como contraste con el 78 % promedio que reporta el caso para el cargue actual.
 
-`medicion.py` aún usa su propio generador de pesos y valores (sección 4.2). Integrar `datos.py` en las mediciones, para que incluyan las fechas de vencimiento y las reglas de `regla_actual.py`, queda coordinado con el Integrante 4.
+`medicion.py` usa estos mismos generadores y las cuatro funciones de cargue. La suite original conserva su fuerza bruta como oráculo independiente; las mediciones usan únicamente `cargar_exhaustivo`.
 
 ---
 
@@ -225,120 +254,169 @@ Sea $n$ el número de lotes y $W$ la capacidad entera en kilogramos. Las cotas s
 
 **Crecimiento:** con $W$ fijo, duplicar $n$ duplica el término $nW$; en exhaustiva, el término $n2^n$ se multiplica por $2^{n+1}$. La cota $n\log n$ de las reglas crece algo más del doble. Aumentar $W$ afecta directamente al costo de DP. Estas relaciones son teóricas, no tiempos medidos.
 
-### 4.2. Mediciones y gráficas — Integrante 4: Franco Moncayo Uribe
+### 4.2. Mediciones y gráficas
 
-Se conservan las tablas temporales y las tres gráficas del aporte del Integrante 4. [medicion.py](src/cargue_vehiculos/medicion.py) usa semilla fija (`SEMILLA = 42`) y `time.perf_counter()`, excluye la generación de datos del cronómetro y toma el menor tiempo de varias repeticiones.
+[medicion.py](src/cargue_vehiculos/medicion.py) usa [datos.py](src/cargue_vehiculos/datos.py),
+semilla 42 y las funciones `cargar_vehiculo`, `cargar_exhaustivo`,
+`cargar_por_vencimiento` y `cargar_por_densidad`. Las instancias son prefijos
+del mismo inventario sintético apto, con pesos de 20–600 kg. Cada algoritmo
+recibe exactamente los mismos lotes para cada par $(n,W)$.
 
-**Alcance de las series actuales:** se miden `fuerza_bruta` de `medicion.py`, `mochila_01` y `cargue_por_vencimiento` de `estrategia.py`. Esta última supone entradas previamente ordenadas y no recibe fechas; el generador actual produce únicamente pesos y valores. Los tiempos no corresponden a `cargar_exhaustivo`, `cargar_por_vencimiento` ni `cargar_por_densidad` de los módulos `exhaustivo.py` y `regla_actual.py`.
+Antes de cronometrar se valida capacidad, valor, índices e inmutabilidad.
+En los ocho tamaños pequeños se exige que DP y exhaustiva coincidan, y que
+las reglas no superen el óptimo. Esta ejecución previa también sirve de
+calentamiento. Se mide la función completa con `time.perf_counter()`,
+incluidas validación, ordenación y reconstrucción, durante **cinco
+repeticiones**; se publica la **media aritmética**. La generación, la
+verificación externa, los conteos y el dibujo quedan fuera del cronómetro.
 
-Los conteos publicados se contrastaron con el generador y las funciones actuales. Los tiempos dependen del equipo y están redondeados; se requiere conservar la salida original con suficiente precisión para auditar las razones de tiempo por celda.
+Los tiempos individuales, selecciones, semillas, huellas de las entradas y
+el entorno se conservan en [resultados.json](graficas/cargue_vehiculos/resultados.json).
+La ejecución registrada usa Python 3.14.7 sobre WSL Ubuntu, en un solo hilo.
+Los tiempos dependen de la carga del equipo; las cifras de las tablas están
+redondeadas y los cocientes se calculan antes del redondeo.
 
 #### 4.2.1. Tiempo frente al número de lotes
 
-Con $W = 1000$ kg, se registraron las siguientes implementaciones:
+![Tiempo frente al número de lotes](graficas/cargue_vehiculos/tiempo_vs_n.png)
 
-1. **`fuerza_bruta` de `medicion.py`:** $\Theta(n \cdot 2^n)$
-2. **Mochila 0/1 (Programación Dinámica):** $\Theta(n \cdot W)$
-3. **`cargue_por_vencimiento` de `estrategia.py`, sin ordenación:** $\Theta(n)$, incluida su validación de entrada.
+El panel izquierdo compara las cuatro soluciones con $W=1000$ kg; el
+derecho muestra DP y reglas hasta 2000 lotes, con $W=4000$ kg. La escala
+logarítmica permite distinguir las curvas más rápidas.
 
-![Tiempo vs n](graficas/cargue_vehiculos/tiempo_vs_n.png)
+| $n$ | DP (ms) | Exhaustiva (ms) | Vencimiento (ms) | Densidad (ms) |
+|---:|---:|---:|---:|---:|
+| 4 | 0,273526 | 0,025087 | 0,007528 | 0,014079 |
+| 6 | 0,434409 | 0,075378 | 0,008437 | 0,017849 |
+| 8 | 0,545298 | 0,411054 | 0,009851 | 0,023005 |
+| 10 | 0,521212 | 1,129124 | 0,021637 | 0,054098 |
+| 12 | 0,714171 | 6,107675 | 0,014746 | 0,039478 |
+| 14 | 0,806153 | 24,653482 | 0,017094 | 0,050858 |
+| 16 | 0,884439 | 82,821107 | 0,015682 | 0,043914 |
+| 18 | 0,987400 | 358,612014 | 0,016125 | 0,048586 |
 
-| $n$ (lotes) | Exhaustivo (ms) | Mochila DP (ms) | Vencimiento (ms) |
-|:---:|:---:|:---:|:---:|
-| 4 | 0,017 | 0,353 | 0,0016 |
-| 6 | 0,037 | 0,309 | 0,0016 |
-| 8 | 0,141 | 0,461 | 0,0019 |
-| 10 | 0,606 | 0,713 | 0,0022 |
-| 12 | 2,454 | 0,712 | 0,0024 |
-| 14 | 10,255 | 0,808 | 0,0032 |
-| 16 | 45,529 | 0,994 | 0,0034 |
-| 18 | **192,150** | **1,179** | **0,0035** |
+Escalabilidad con $W=4000$ kg:
 
-* **Análisis:** de $n=8$ a $n=16$, la razón temporal publicada de fuerza bruta es $45{,}529/0{,}141 \approx 322{,}90$; DP presenta $0{,}994/0{,}461 \approx 2{,}16$. En teoría, los subconjuntos se multiplican por 256 y el término $n2^n$ por 512. Estas cantidades representan métricas distintas; las mediciones finitas no tienen que reproducir exactamente el factor de la cota asintótica. Con $W$ fijo, la tendencia de DP es compatible con su dependencia lineal de $n$.
+| $n$ | DP (ms) | Vencimiento (ms) | Densidad (ms) |
+|---:|---:|---:|---:|
+| 50 | 13,221871 | 0,034718 | 0,156358 |
+| 100 | 24,478858 | 0,185418 | 0,405644 |
+| 200 | 51,483919 | 0,120957 | 0,839582 |
+| 400 | 110,398151 | 0,314673 | 1,428155 |
+| 600 | 163,828430 | 0,368933 | 2,422264 |
+| 1000 | 252,314926 | 0,746552 | 3,941349 |
+| 2000 | 488,327088 | 1,562111 | 8,786330 |
 
----
+#### 4.2.2. Conteos y contraste al duplicar el tamaño
 
-#### 4.2.2. Conteos de subconjuntos, celdas y comparaciones
+![Conteos frente al número de lotes](graficas/cargue_vehiculos/operaciones_vs_n.png)
 
-Se registran unidades distintas de trabajo para cada implementación:
+Los contadores observan ejecuciones reales mediante `sys.settrace`, en una
+llamada separada: DP cuenta actualizaciones candidatas de celdas; exhaustiva,
+subconjuntos; las reglas, comparaciones de capacidad. Se comprueban además
+las identidades $\sum_i\max(0,W-p_i+1)$ y $2^n$. La instrumentación se retira
+al terminar y no interviene en los tiempos.
 
-* **Exhaustivo:** Combinaciones evaluadas ($2^n$).
-* **Mochila DP:** Celdas efectivas calculadas en la tabla ($\sum \max(0, W - \text{peso}_i + 1)$).
-* **Vencimiento:** Comparaciones de capacidad del recorrido, sin contar la validación de entrada ni una ordenación por fecha.
+| $n$ | Celdas DP | Subconjuntos | Comparaciones vencimiento | Comparaciones densidad |
+|---:|---:|---:|---:|---:|
+| 4 | 3080 | 16 | 4 | 4 |
+| 6 | 4457 | 64 | 4 | 6 |
+| 8 | 5787 | 256 | 4 | 8 |
+| 10 | 7038 | 1024 | 5 | 10 |
+| 12 | 8569 | 4096 | 5 | 12 |
+| 14 | 10115 | 16384 | 5 | 14 |
+| 16 | 11532 | 65536 | 4 | 16 |
+| 18 | 13058 | 262144 | 4 | 18 |
 
-![Operaciones vs n](graficas/cargue_vehiculos/operaciones_vs_n.png)
+Para $n=8$ y $n=16$, con la misma capacidad:
 
-| $n$ (lotes) | Subconjuntos exhaustivos ($2^n$) | Celdas Mochila DP ($\Theta(n \cdot W)$) | Comparaciones de capacidad |
-|:---:|:---:|:---:|:---:|
-| 4 | 16 | 3.163 | 4 |
-| 8 | 256 | 4.988 | 3 |
-| 12 | 4.096 | 7.305 | 3 |
-| 16 | 65.536 | 11.246 | 6 |
-| 18 | **262.144** | **13.303** | 4 |
+| Estrategia | Factor de tiempo | Factor del conteo | Referencia teórica |
+|---|---:|---:|---|
+| DP | 1,6219 | 1,9927 | 2 para $nW$; las celdas útiles dependen de los pesos |
+| Exhaustiva | 201,4847 | 256,0000 | 512 para $n2^n$; 256 para los subconjuntos |
+| Vencimiento | 1,5919 | 1,0000 | 8/3 para la cota $n\log_2 n$; el conteo excluye ordenar |
+| Densidad | 1,9089 | 2,0000 | 8/3 para la cota $n\log_2 n$; el recorrido compara $n$ lotes |
 
-La escala logarítmica permite comparar el crecimiento de estas métricas. Los $2^n$ subconjuntos no equivalen a todas las operaciones elementales de la exhaustiva: evaluar sus elementos exige trabajo adicional. Tampoco se contabiliza aquí el costo completo de las otras funciones.
+La exhaustiva explora exactamente 256 veces más subconjuntos al pasar de 8
+a 16 lotes, pero debe sumar más elementos por subconjunto; el conteo no
+representa todas sus operaciones. DP también reserva e inicializa marcas,
+además de actualizar celdas. En vencimiento el recorrido puede detenerse
+pronto, aunque todas las entradas se validan y ordenan. Densidad revisa
+todos los lotes, pero su tiempo incluye `Fraction` y la ordenación.
 
----
+Los factores temporales no coinciden exactamente con las cotas: son
+instancias pequeñas, con costos fijos, distinta cantidad de celdas útiles
+y ruido del sistema. Las fluctuaciones también explican que alguna
+medición disminuya al aumentar $n$; no se descartan esas repeticiones.
+Las cotas describen crecimiento asintótico, no garantizan un cociente
+exacto para dos mediciones.
 
-#### 4.2.3. Tiempo frente a capacidad ($n = 400$)
+#### 4.2.3. Tiempo frente a capacidad
 
-Para evidenciar el carácter pseudopolinomial de la mochila, se fijó $n = 400$ lotes candidatos y se incrementó la capacidad $W$ del camión:
+![Tiempo frente a capacidad](graficas/cargue_vehiculos/tiempo_vs_capacidad.png)
 
-![Tiempo vs capacidad](graficas/cargue_vehiculos/tiempo_vs_capacidad.png)
+Se conservan los mismos 400 lotes y solo cambia $W$.
 
-| $W$ (kg) | Tiempo (s) | Celdas evaluadas | ns por celda |
-|:---:|:---:|:---:|:---:|
-| 500 | 0,0056 | 84.223 | 66,9 |
-| 1.000 | 0,0181 | 280.428 | 64,7 |
-| 2.000 | 0,0451 | 680.428 | 66,3 |
-| 4.000 | 0,1033 | 1.480.428 | 69,8 |
-| 8.000 | 0,2380 | 3.080.428 | 77,3 |
+| $W$ (kg) | DP (s) | Celdas evaluadas | ns por celda |
+|---:|---:|---:|---:|
+| 500 | 0,00522916 | 77074 | 67,846 |
+| 1000 | 0,01818258 | 273350 | 66,518 |
+| 2000 | 0,04589030 | 673350 | 68,152 |
+| 4000 | 0,10324299 | 1473350 | 70,074 |
+| 8000 | 0,22046613 | 3073350 | 71,735 |
 
-* **Contraste empírico con $\Theta(n \cdot W)$:**
+De 1000 a 2000 kg, el tiempo se multiplica por **2,5239**
+y las celdas por **2,4633**.
+De 2000 a 4000 kg los factores son **2,2498** y
+**2,1881**, respectivamente. Las celdas crecen
+más del doble porque el límite inferior de cada recorrido depende del peso
+del lote. Los resultados son compatibles con la dependencia de $W$;
+no constituyen una demostración experimental de la cota.
 
-  - Al duplicar $W$ de 1.000 a 2.000 kg, el cociente de tiempos publicados es $0{,}0451 / 0{,}0181 \approx \mathbf{2{,}49}$; las celdas útiles crecen $680428/280428 \approx 2{,}43$ debido al rango de capacidades evaluado para cada peso.
-  - De 2.000 a 4.000 kg, el tiempo crece aproximadamente $\mathbf{2{,}29}$ veces y las celdas $1480428/680428 \approx 2{,}18$ veces.
-  - El costo por celda publicado varía entre 64,7 y 77,3 ns. La tendencia observada es compatible con el análisis teórico, pero no constituye una demostración de la complejidad.
+### 4.3. Extrapolación al volumen real
 
----
+Se considera el extremo de 600 lotes por ruta, 4000 kg y 14 vehículos
+procesados secuencialmente. Los modelos se calibran con las medias del
+registro anterior, no con una constante temporal supuesta:
 
-### 4.3. Extrapolación de tiempo y energía
+- **DP:** referencia de 2000 lotes y 4000 kg, 0,488327088 s; se escala con $nW$.
+- **Vencimiento:** 0,001562111 s para 2000 lotes; se usa $n\log_2 n$ para modelar la ordenación.
+- **Densidad:** 0,008786330 s para 2000 lotes; se adopta el mismo modelo $n\log_2 n$.
+- **Exhaustiva:** 0,358612014 s para 18 lotes; se escala con $n2^n$. La capacidad no cambia el número de subconjuntos ni las dos sumas de esta implementación.
 
-**Supuesto de extrapolación pendiente de validación experimental:** se utiliza el coeficiente de **$67{,}2\text{ ns}$ por celda** recogido en el informe previo para $n = 2000$. No se dispone de un registro experimental que respalde ese valor. Las cifras siguientes son estimaciones condicionadas a este coeficiente y a la potencia indicada, no resultados experimentales comprobados.
+Los factores son $600/2000$ para DP, $(600\log_2 600)/(2000\log_2 2000)$
+para las reglas y $(600/18)2^{600-18}$ para exhaustiva. Para DP, el cociente
+$W/W_{\rm ref}$ vale uno. El modelo de las reglas supone que domina ordenar;
+los empates de fecha y los costos lineales pueden cambiar el factor real.
+La extrapolación exponencial solo ilustra inviabilidad: no se ejecutó
+exhaustiva sobre 600 lotes.
 
-El escenario considera 300 días operativos anuales, según la información suministrada en el Caso 3:
+| Estrategia | Tiempo estimado por vehículo (s) | Tiempo estimado de 14 vehículos (s) | Ventana de 7200 s |
+|---|---:|---:|---|
+| DP | 0,146498 | 2,050974 | Cabe en el modelo |
+| Exhaustiva | 1,892174e+176 | 2,649044e+177 | No es viable |
+| Vencimiento | 0,000394 | 0,005522 | Cabe en el modelo |
+| Densidad | 0,002218 | 0,031057 | Cabe en el modelo |
 
-* **Lotes candidatos:** 600 lotes por ruta.
-* **Capacidad:** 4.000 kg.
-* **Flota:** 14 vehículos despachados en la madrugada.
-* **Potencia supuesta del computador bajo carga:** 150 W ($0{,}150\text{ kW}$).
-* **Días de operación:** 300 días al año.
+Como comprobación del modelo, la instancia sintética de 600 lotes tardó
+**0,163828430 s** por vehículo, frente a la estimación de
+**0,146498126 s**. La diferencia absoluta relativa
+a la medición es **10,58 %**.
+Esto muestra la incertidumbre de trasladar una constante entre tamaños.
 
-| Métrica | Estimación con 67,2 ns/celda |
-|:---|:---:|
-| **Tiempo por vehículo (600 lotes, 4.000 kg)** | **0,16128 s** |
-| **Tiempo total para la flota (14 vehículos)** | **2,25792 s** |
-| **Energía diaria de DP (14 vehículos)** | **0,09408 Wh** |
-| **Energía anual de DP (14 vehículos, 300 días)** | **0,028224 kWh** |
-| **Escenario de crecimiento (segunda bodega, 28 vehículos)** | **4,51584 s por día** |
+### 4.4. Ajuste a la ventana y límites
 
-El modelo usa $t_{\text{vehículo}} = 600 \cdot 4000 \cdot 67{,}2 \cdot 10^{-9} = 0{,}16128$ s y $t_{\text{flota}} = 14t_{\text{vehículo}} = 2{,}25792$ s por día. Con $150\text{ W} = 0{,}15\text{ kW}$, se aplica $E\text{ (kWh)} = P\text{ (kW)} \cdot t\text{ (h)}$:
+La ventana de 03:00 a 05:00 se comparte con las operaciones 1 y 2.
+El cómputo estimado de DP ocupa **2,050974 s** para
+los 14 vehículos, por debajo de las dos horas, pero no certifica el tiempo
+del proceso completo. La exhaustiva resulta inviable a escala real.
 
-$$E_{\text{anual}} = 0{,}15 \cdot \frac{2{,}25792}{3600} \cdot 300 = 0{,}028224\text{ kWh}.$$
+Las proyecciones suponen un computador con rendimiento comparable al usado
+en las mediciones, iguales unidades de capacidad y condiciones semejantes.
+No incluyen consultas, lectura de archivos, preparación de candidatos ni
+alistamiento. La energía y su diferencia anual se calculan en §6.1.
 
-Este resultado representa la energía estimada del computador durante la ejecución de DP para los 14 vehículos, una vez al día durante 300 días. No representa una diferencia entre estrategias, un ahorro energético ni el consumo total anual del banco. El término $600\cdot4000$ es una cota de trabajo; las celdas efectivamente evaluadas dependen de los pesos. Sin validar el coeficiente temporal y sin medición eléctrica directa, el resultado permanece condicionado a los supuestos del modelo.
-
-### 4.4. Ajuste a la ventana operativa
-
-* **Ventana permitida:** 2 horas (03:00 – 05:00) compartida con las demás operaciones.
-* **Tiempo estimado de DP para la flota:** aproximadamente **2,26 segundos**, bajo los supuestos anteriores.
-* La estimación de esta operación es muy inferior a las dos horas disponibles; no certifica el tiempo total de planeación, compartido con las demás operaciones.
-
-### 4.5. Dependencias de integración experimental
-
-El Integrante 4 debe integrar las funciones definitivas, medir su costo completo y revisar etiquetas, tablas y gráficas. La nueva regla por vencimiento incluye ordenación y no debe heredar la serie lineal anterior; densidad aún no tiene una serie medida. También quedan pendientes la validación experimental del coeficiente por celda y la reproducción de la simulación de flota citada en la sección 5.4.
-
-### 4.6. Línea base energética del proceso actual
+### 4.5. Línea base energética del proceso completo
 
 Pendiente para la entrega del 23 de noviembre
 
@@ -389,18 +467,45 @@ Las densidades exactas dan el orden `[1, 3, 0, 2, 4]`: $11/5 > 2 > 19/10 > 4/5 >
 
 Si se permitiera dividir los lotes y el valor nutricional fuera proporcional a la cantidad cargada, el problema sería una mochila fraccionaria. Cargar por densidad descendente y tomar la fracción necesaria del siguiente lote sería óptimo: sustituir peso de menor densidad por igual peso de mayor densidad no reduce el valor. Esta condición no se cumple en el banco, donde los lotes son indivisibles. `cargar_por_densidad` implementa una heurística 0/1, no la solución fraccionaria.
 
-### 5.4. Calidad del cargue: simulación de flota del informe previo
+### 5.4. Calidad del cargue en catorce rutas sintéticas
 
-Los valores de esta tabla se conservan del informe previo. Su origen está asociado a `calidad_flota` del archivo histórico `medicion_mochila.py` (commit `316def5`), eliminado en la integración posterior. El módulo actual no reproduce esa simulación; el Integrante 4 debe recuperar y verificar su procedimiento antes de considerarla un resultado experimental definitivo.
+Se ejecutaron DP y las dos reglas sobre las mismas rutas de `generar_ruta`,
+con semillas 142 a 155, entre 300 y 600 lotes por ruta y capacidades de
+2500–4000 kg. La capacidad conjunta es **45899 kg**; cada vehículo se
+comprueba por separado. No se ejecuta exhaustiva a estos tamaños. Las
+selecciones y los resultados de cada ruta están en `resultados.json`.
 
-| Métrica | Cargue por vencimiento (actual) | Mochila 0/1 (propuesta) | Impacto |
-|:---|:---:|:---:|:---:|
-| **Ocupación promedio de los camiones** | 92,1 % | **100,0 %** | +7,9 puntos porcentuales de ocupación |
-| **Mejora del valor nutricional ponderado** | Línea base | **+87,9 %** | Incremento del valor nutricional ponderado |
+| Estrategia | Peso total (kg) | Ocupación conjunta | Valor nutricional total |
+|---|---:|---:|---:|
+| Vencimiento | 43269 | 94,2700 % | 235168 |
+| Densidad | 45809 | 99,8039 % | 549318 |
+| DP | 45899 | 100,0000 % | 550788 |
 
-La ocupación mide peso/capacidad; el objetivo optimizado es el valor nutricional. Maximizar este último no garantiza ocupar el 100 % del vehículo ni permite inferir directamente raciones entregadas o emisiones evitadas. El 78 % indicado por el caso de estudio y el 92,1 % de la simulación corresponden a fuentes e instancias distintas.
+DP aporta **315620 unidades más** que vencimiento, un incremento de
+**134,2104 %** respecto al valor de esa regla.
+La ocupación conjunta aumenta **5,7300 puntos porcentuales**.
+Se calcula como peso total/capacidad total, no como promedio simple de los
+porcentajes por ruta.
 
-### 5.5. Comparación integral de las operaciones
+La ocupación y el valor nutricional son métricas diferentes. Estos resultados
+sintéticos no permiten inferir raciones reales adicionales, desperdicio
+evitado ni emisiones reducidas. El 78 % del caso corresponde al proceso
+real; no es la línea base de esta simulación.
+
+### 5.5. Recomendación para el cargue
+
+Se recomienda DP porque entrega el máximo valor nutricional con lotes
+indivisibles y capacidad limitada. Vencimiento y densidad son más rápidas,
+pero sus contraejemplos muestran que incumplen el objetivo exacto. La
+exhaustiva se conserva para validar instancias pequeñas.
+
+DP requiere memoria proporcional a $nW$ y depende de la unidad en que se
+exprese el peso. La recomendación supone capacidades enteras en kilogramos;
+capacidades mucho mayores exigen revisar tiempo y memoria. La aptitud
+sanitaria y el orden FEFO de salida deben garantizarse en el flujo de
+despacho, sin confundir la prioridad sanitaria con maximizar el valor.
+
+### 5.6. Comparación integral de las operaciones
 
 Pendiente para la entrega del 23 de noviembre
 
@@ -408,13 +513,41 @@ Pendiente para la entrega del 23 de noviembre
 
 ## 6. Implicaciones éticas, sociales y ambientales
 
-* **Equidad en la distribución (personas):** Maximizar ciegamente el valor nutricional global podría desfavorecer a comedores comunitarios o jardines infantiles de rutas específicas si sus lotes solicitados aportan menor valor bruto. **Mitigación algorítmica:** Establecer cuotas mínimas reservadas por tipo de población beneficiaria o aplicar factores de ponderación social antes de resolver la mochila. Las cuotas requieren modificar el modelo y no están implementadas en la solución actual.
-* **Seguridad alimentaria (FEFO):** La mochila optimiza *qué lotes suben*, no el orden de consumo. Antes de optimizar deben filtrarse los lotes vencidos, y dentro de cada categoría debe conservarse la política FEFO al descargar.
-* **Trazabilidad sanitaria:** `mochila_01` no modifica los datos de entrada, lo que facilita vincular la selección con los registros originales; una auditoría sanitaria completa requiere además identificadores y registros persistentes.
-* **Impacto ambiental y reducción de desperdicio:** El informe previo atribuye al cliente un factor de **2,5 kg de $\text{CO}_2$ equivalente** por kilogramo de alimento desechado, pendiente de contrastar con el documento original del caso. Este factor permitiría estimar emisiones evitadas si se midieran los kilogramos de desperdicio realmente reducidos. Los contraejemplos y la simulación sintética no permiten cuantificar ese impacto real.
-* **Escenario de crecimiento:** Con una segunda bodega (28 camiones), el modelo de la sección 4.3 estima aproximadamente 4,52 segundos diarios si se conserva el tamaño de cada ruta y la misma constante temporal. La sostenibilidad integral requiere evaluar las demás operaciones y los efectos ambientales reales.
+### 6.1. Consumo energético del cargue
 
-### 6.1. Normativa, impacto en organizaciones beneficiarias y trazabilidad sanitaria integral
+Se usa la potencia aproximada de 150 W = 0,15 kW indicada por el caso y
+300 días operativos anuales, con un cálculo diario por cada uno de los
+14 vehículos. Para cada estrategia:
+
+$$E_{\text{día}}\;(\mathrm{kWh})=0{,}15\cdot\frac{14t_{\text{vehículo}}}{3600},
+\qquad E_{\text{año}}=300E_{\text{día}}.$$
+
+| Estrategia | Energía estimada por día (kWh) | Proyección de 300 días (kWh) |
+|---|---:|---:|
+| DP | 0,000085457 | 0,025637172 |
+| Exhaustiva | 1,103768e+173 | 3,311304e+175 |
+| Vencimiento | 0,000000230 | 0,000069020 |
+| Densidad | 0,000001294 | 0,000388216 |
+
+La diferencia anual **DP menos vencimiento** es **0,025568152 kWh**.
+Es positiva: DP exige más energía de cómputo que la regla actual bajo este
+modelo, a cambio de obtener el óptimo. No se afirma un ahorro eléctrico
+frente a vencimiento. Frente a exhaustiva, DP evita un costo impracticable.
+
+El valor astronómico de exhaustiva es la consecuencia formal de proyectar
+una tarea que no terminaría; no es una previsión realizable de consumo anual.
+Los demás valores también son estimaciones de cómputo, sin medición eléctrica
+directa y sin incluir el consumo en reposo ni el proceso completo del banco.
+
+### 6.2. Consideraciones sociales y ambientales
+
+* **Equidad en la distribución (personas):** Maximizar ciegamente el valor nutricional global podría desfavorecer a comedores comunitarios o jardines infantiles de rutas específicas si sus lotes solicitados aportan menor valor bruto. **Mitigación algorítmica:** Establecer cuotas mínimas reservadas por tipo de población beneficiaria o aplicar factores de ponderación social antes de resolver la mochila. Las cuotas requieren modificar el modelo y no están implementadas en la solución actual.
+* **Seguridad alimentaria (FEFO):** La mochila selecciona los lotes; antes se excluyen los vencidos y, después, los seleccionados deben despacharse por vencimiento dentro de cada categoría. La operación 2 aborda el ordenamiento sanitario de bodega.
+* **Trazabilidad sanitaria:** `mochila_01` no modifica los datos de entrada, lo que facilita vincular la selección con los registros originales; una auditoría sanitaria completa requiere además identificadores y registros persistentes.
+* **Impacto ambiental y reducción de desperdicio:** El Caso 3 suministra un factor de **2,5 kg de $\text{CO}_2$ equivalente** por kilogramo de alimento desechado. Este factor permitiría estimar emisiones evitadas si se midieran los kilogramos de desperdicio realmente reducidos. Los contraejemplos y la simulación sintética no permiten cuantificar ese impacto real.
+* **Escenario de crecimiento:** Si se duplican los vehículos y se conserva el tamaño de cada ruta, el modelo duplica el costo del cargue. El escenario completo de segunda bodega exige además revisar el crecimiento del inventario y de las demás operaciones.
+
+### 6.3. Normativa, impacto en organizaciones beneficiarias y trazabilidad sanitaria integral
 
 Pendiente para la entrega del 23 de noviembre
 
@@ -424,7 +557,7 @@ Pendiente para la entrega del 23 de noviembre
 
 ### 7.1. Conclusiones de la operación 3
 
-En los dos contraejemplos, la exhaustiva y DP alcanzan el mismo valor óptimo. Vencimiento pierde 1570 unidades y densidad pierde 450 frente a ese óptimo; por tanto, ninguna regla garantiza maximizar el valor nutricional con lotes indivisibles. La exhaustiva sirve para verificar casos pequeños, pero su crecimiento exponencial impide aplicarla al volumen real. Se mantiene DP como estrategia propuesta, con costo pseudopolinomial en la capacidad. La evaluación temporal definitiva debe integrar las funciones actuales y conservar evidencia reproducible de las mediciones.
+En los dos contraejemplos, la exhaustiva y DP alcanzan el mismo valor óptimo. Vencimiento pierde 1570 unidades y densidad pierde 450 frente a ese óptimo; por tanto, ninguna regla garantiza maximizar el valor nutricional con lotes indivisibles. La exhaustiva sirve para verificar casos pequeños, pero su crecimiento exponencial impide aplicarla al volumen real. Se mantiene DP como estrategia propuesta, con costo pseudopolinomial en la capacidad. Las mediciones integradas y sus repeticiones respaldan la viabilidad computacional estimada de DP para el cargue, sin certificar las otras operaciones. Su ventaja frente a la regla actual es la calidad óptima de la selección, no un ahorro eléctrico de cómputo.
 
 ### 7.2. Conclusiones integrales del proyecto
 
@@ -458,7 +591,17 @@ python -B src/cargue_vehiculos/pruebas_contraejemplos.py
 python -B src/cargue_vehiculos/medicion.py
 ```
 
-El último comando sobrescribe las tres gráficas existentes. La actualización de las mediciones está pendiente, como se indica en la sección 4.5.
+El último comando guarda las repeticiones en
+`graficas/cargue_vehiculos/resultados.json` y regenera las tres imágenes.
+Una nueva ejecución puede producir tiempos diferentes; las tablas y el
+análisis deben corresponder al mismo registro de resultados.
+
+Para reconstruir solo las gráficas con los datos publicados, sin medir de
+nuevo:
+
+```bash
+python -B src/cargue_vehiculos/medicion.py --solo-graficas
+```
 
 ### 8.1. Exportación del informe a PDF
 

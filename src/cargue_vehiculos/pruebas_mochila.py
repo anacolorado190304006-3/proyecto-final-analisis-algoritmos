@@ -8,7 +8,16 @@ from estrategia import cargue_por_vencimiento, mochila_01
 def fuerza_bruta(
     pesos: list[int], valores: list[int], capacidad: int
 ) -> int:
-    """Mejor valor probando todos los subconjuntos (solo n pequeno)."""
+    """Obtiene un oráculo independiente para la suite original.
+
+    Args:
+        pesos: Pesos enteros positivos.
+        valores: Valores nutricionales.
+        capacidad: Capacidad en kg.
+
+    Returns:
+        Valor óptimo por enumeración, solo para instancias pequeñas.
+    """
     n = len(pesos)
     mejor = 0
     for k in range(n + 1):
@@ -22,7 +31,18 @@ def verificar_solucion(
     pesos: list[int], valores: list[int], capacidad: int,
     valor: int, indices: list[int],
 ) -> None:
-    """Comprueba que la solucion sea coherente y respete la capacidad."""
+    """Comprueba que la solución sea coherente y respete la capacidad.
+
+    Args:
+        pesos: Pesos originales en kg.
+        valores: Valores originales.
+        capacidad: Capacidad en kg.
+        valor: Valor declarado por el algoritmo.
+        indices: Índices originales seleccionados.
+
+    Raises:
+        AssertionError: Si la selección o su valor son inconsistentes.
+    """
     assert indices == sorted(set(indices)), "indices repetidos o desordenados"
     assert all(0 <= i < len(pesos) for i in indices)
     assert sum(pesos[i] for i in indices) <= capacidad, "supera capacidad"
@@ -30,7 +50,7 @@ def verificar_solucion(
 
 
 def probar_ejemplo_a_mano() -> None:
-    """Ejemplo del informe: capacidad 7, tres lotes."""
+    """Verifica el subcaso de los tres primeros lotes del ejemplo manual."""
     pesos, valores = [5, 4, 3], [10, 7, 5]
     valor, indices = mochila_01(pesos, valores, 7)
     assert valor == 12 and indices == [1, 2]
