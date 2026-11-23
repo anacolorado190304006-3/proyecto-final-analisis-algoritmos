@@ -13,6 +13,9 @@
 **Código fuente en `src/cargue_vehiculos/`:**  
 [estrategia.py](src/cargue_vehiculos/estrategia.py) · [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) · [medicion.py](src/cargue_vehiculos/medicion.py) · [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) · [regla_actual.py](src/cargue_vehiculos/regla_actual.py) · [pruebas_contraejemplos.py](src/cargue_vehiculos/pruebas_contraejemplos.py) · [datos.py](src/cargue_vehiculos/datos.py) · [pruebas.py](src/cargue_vehiculos/pruebas.py)
 
+**Código fuente de la operación 4 en `src/saturacion_bodega/`:**  
+[datos.py](src/saturacion_bodega/datos.py) · [pruebas.py](src/saturacion_bodega/pruebas.py)
+
 El Laboratorio 4 del 18 de noviembre de 2026 aborda la operación 3: cargue de vehículos. Los apartados pendientes del proyecto final se identifican para la entrega del 23 de noviembre.
 
 **Preparación del entorno**
@@ -228,6 +231,87 @@ Cada generador usa su propio `random.Random(semilla)`: la misma semilla reproduc
 Estas ocupaciones dependen de los datos sintéticos, que contienen muchos lotes pequeños; no son una medición sobre datos reales del banco. Sirven como contraste con el 78 % promedio que reporta el caso para el cargue actual.
 
 `medicion.py` usa estos mismos generadores y las cuatro funciones de cargue. La suite original conserva su fuerza bruta como oráculo independiente; las mediciones usan únicamente `cargar_exhaustivo`.
+
+### 3.3. Operación 4: datos sintéticos y pruebas de la saturación de bodega — Integrante 3: Juan David Machado Mosquera
+
+La operación 4 busca, para cada categoría, el tramo de horas consecutivas en que más creció el inventario. Su código está en `src/saturacion_bodega/`, separado del cargue, con los mismos nombres de módulo.
+
+#### 3.3.1. Contrato común de las estrategias
+
+Para que las pruebas y las mediciones traten igual a todas las estrategias, la suite espera esta interfaz:
+
+| Módulo | Función | Estrategia |
+|---|---|---|
+| `estrategia.py` | `tramo_maximo_dividir(cambios)` | Dividir y vencer |
+| `estrategia.py` | `tramo_maximo_kadane(cambios)` | Kadane |
+| `exhaustivo.py` | `tramo_maximo_exhaustivo(cambios)` | Todos los tramos (programa actual) |
+
+* **Entrada:** `cambios: list[int]`, el cambio neto de cada hora en kg, en orden cronológico.
+* **Salida:** `(suma, inicio, fin)`. Es el tramo `cambios[inicio:fin + 1]`, con índices en base cero y `fin` incluido.
+* **Tramo no vacío:** si todas las horas son negativas, se reporta la hora menos negativa. La Dirección siempre recibe un tramo concreto.
+* **Serie vacía:** lanza `ValueError`, porque no existe ningún tramo que reportar.
+* **Empates:** si varios tramos alcanzan la suma máxima, se acepta cualquiera. Dividir y vencer y Kadane pueden elegir tramos distintos, pero la suma debe ser exactamente la máxima.
+* **Trazabilidad:** ninguna estrategia modifica la serie recibida.
+
+#### 3.3.2. Datos sintéticos
+
+[datos.py](src/saturacion_bodega/datos.py) genera series horarias con la estructura del caso. Con los valores por defecto produce el volumen real: 40 categorías × 36.000 horas (12 horas diarias, 300 días al año, 10 años). Cada hora es un `RegistroHorario` inmutable con `categoria`, `dia`, `hora` y `cambio_kg`.
+
+Las cifras del modelo son supuestos del equipo. Buscan que la serie tenga un tramo de saturación con sentido para el negocio:
+
+| Componente | Valor | Propósito |
+|---|---|---|
+| Escala de la categoría | 20 a 200 kg por hora | Categorías pequeñas y grandes |
+| Patrón diario | Entradas en la mañana y salidas en la tarde; promedio cero | Movimiento normal de la bodega |
+| Temporada alta | Últimos 50 días operativos de cada año, +40 % de la escala por hora | Saturación de fin de año que debe detectarse |
+| Fuera de temporada | −20 % de la escala por hora | Saldo anual negativo: el inventario no crece sin límite |
+| Ruido | Gaussiano, desviación del 50 % de la escala | Variación horaria |
+| Eventos | Donación grande (1 %, +2 a 6 veces la escala) y descarte (0,5 %, −2 a 4 veces la escala) | Picos aislados |
+
+Con este modelo el saldo de diez años es negativo y el tramo máximo dura una temporada. Según el oráculo de la suite, con las semillas 0 a 7 dura entre 594 y 641 horas y siempre empieza entre los días 249 y 251 del año. Así el resultado no es trivial: no coincide con toda la serie ni con una sola hora.
+
+| Función | Uso |
+|---|---|
+| `generar_serie(n, semilla)` | Serie de `n` horas de una categoría |
+| `generar_historico(horas, categorias, semilla)` | Una serie por categoría; la categoría k usa la semilla `semilla + k` |
+| `generar_registros(categoria, n, semilla)` | Registros originales inmutables |
+| `generar_serie_pequena(n, semilla, rango_kg)` | Valores uniformes en ±`rango_kg`, para contrastar con la exhaustiva; con rangos pequeños aparecen empates y ceros |
+| `a_serie(registros)` | Extrae los cambios sin modificar los registros |
+| `describir_hora(indice)` | Convierte un índice en texto, por ejemplo "año 9, día 250, 06:00", para reportar el tramo |
+
+Cada generador usa su propio `random.Random(semilla)`, con semilla base `SEMILLA_BASE = 2026`.
+
+#### 3.3.3. Pruebas
+
+[pruebas.py](src/saturacion_bodega/pruebas.py) no depende del código de las estrategias para saber la respuesta correcta. Trae dos oráculos propios:
+* uno que revisa todos los tramos por definición, en $\Theta(n^2)$;
+* otro con sumas prefijas, $\max_{i<j}(P_j - P_i)$, en $\Theta(n)$, para las series largas.
+
+Los dos se contrastan entre sí en 300 series. A cada resultado se le aplica `verificar_tramo`, que comprueba:
+* que la salida sea `(suma, inicio, fin)` con enteros;
+* que se cumpla $0 \le \text{inicio} \le \text{fin} < n$;
+* que la suma reportada sea exactamente la del tramo;
+* que esa suma sea la máxima. Esta es la restricción del negocio: el tramo reportado es el de mayor crecimiento acumulado, no una aproximación.
+
+| Prueba | Qué verifica |
+|---|---|
+| `probar_reproducibilidad`, `probar_volumen_del_caso` | Misma semilla, misma serie. Volumen real de 40 × 36.000 y una serie distinta por categoría. |
+| `probar_forma_de_la_serie` | Series de 36.000 horas con valores enteros y de ambos signos, y saldo negativo. El tramo máximo dura más de un día, menos de un año y empieza en temporada. |
+| `probar_registros_y_adaptadores`, `probar_describir_hora` | Registros inmutables y en orden, y conversión de índices a fechas. |
+| `probar_oraculos` | Los dos oráculos coinciden en 300 series. |
+| `probar_casos_limite` | 16 casos con resultado conocido: una hora (positiva, negativa o cero), todas negativas, todas positivas, máximo al inicio o al final, tramo en la mitad izquierda, en la derecha y cruzando la mitad, pico aislado, el ejemplo de CLRS (43, horas 7 a 10) y tres casos de empate. |
+| `probar_ejemplo_manual` | El ejemplo para resolver a mano da exactamente `(11, 2, 5)`. |
+| `probar_serie_vacia` | Las tres estrategias lanzan `ValueError`. |
+| `probar_no_modifica_entrada` | Ninguna estrategia altera la serie. |
+| `probar_aleatorias_contra_oraculo` | 200 series de 1 a 64 horas (el mínimo exigido es 20), con rangos de ±2 a ±500 kg y semillas 4000 a 4199. |
+| `probar_series_del_modelo` | 5 series del modelo de 600 horas, incluida la exhaustiva. |
+| `probar_volumen_real` | 3 categorías de 36.000 horas con dividir y vencer y Kadane. La exhaustiva no se ejecuta: serían unos $6{,}5 \times 10^8$ tramos por categoría. |
+
+**Ejemplo para resolver a mano.** Son 8 horas, en kg: `[3, -5, 4, -1, 2, 6, -9, 5]`. El tramo máximo son las horas 2 a 5, con 11 kg (4 − 1 + 2 + 6). Dividir y vencer parte la serie en las horas 0–3 y 4–7. El óptimo cruza esa mitad: la mejor suma que termina en la hora 3 por la izquierda es 4 − 1 = 3, y la mejor que empieza en la hora 4 por la derecha es 2 + 6 = 8.
+
+Si una de las tres funciones aún no existe, la suite la marca como `[pendiente]` y termina con código de salida 1, aunque las pruebas de datos pasen. Así no se reporta una suite completa sin las estrategias.
+
+**Estado de la ejecución.** Las 6 pruebas de datos pasan. Las 7 pruebas de estrategias se ejecutan cuando estén `estrategia.py` y `exhaustivo.py` de la operación 4. *Actualizar este párrafo con el resultado final de las 13 pruebas.*
 
 ---
 
@@ -584,7 +668,18 @@ python -B src/cargue_vehiculos/pruebas_mochila.py
 python -B src/cargue_vehiculos/pruebas_contraejemplos.py
 ```
 
-`pruebas.py` no requiere dependencias externas. Las suites se ejecutaron correctamente. `pruebas_contraejemplos.py` imprime tablas de lotes, selecciones, pesos, valores y diferencias. Todas deben ejecutarse sin `-O`, para conservar las aserciones.
+Operación 4, saturación de la bodega:
+
+```bash
+# Pruebas: datos, casos límite, ejemplo manual y contraste con el oráculo.
+# Sale con código 1 si falta alguna de las tres estrategias.
+python -B src/saturacion_bodega/pruebas.py
+
+# Ejemplo de serie sintética de 36.000 horas con la semilla base
+python -B src/saturacion_bodega/datos.py
+```
+
+Las suites `pruebas.py` no requieren dependencias externas. Las suites del cargue se ejecutaron correctamente. `pruebas_contraejemplos.py` imprime tablas de lotes, selecciones, pesos, valores y diferencias. Todas deben ejecutarse sin `-O`, para conservar las aserciones.
 
 ```bash
 # Ejecutar mediciones y generar las tres gráficas
