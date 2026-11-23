@@ -681,7 +681,35 @@ directa y sin incluir el consumo en reposo ni el proceso completo del banco.
 
 ### 6.3. Normativa, impacto en organizaciones beneficiarias y trazabilidad sanitaria integral
 
-Pendiente para la entrega del 23 de noviembre
+El diseño se relaciona con tres ámbitos normativos colombianos. La tabla
+distingue lo comprobado en el prototipo de los controles necesarios para
+su uso en la fundación.
+
+| Marco y fuente oficial | Aplicación al caso y alcance del proyecto |
+|---|---|
+| [Resolución 2674 de 2013, arts. 27–30](https://normograma.mintic.gov.co/mintic/compilacion/docs/resolucion_minsaludps_2674_2013.htm): almacenamiento, transporte y distribución de alimentos. | Exige condiciones sanitarias, rotación, identificación y registros, así como conservación de la cadena de frío cuando corresponda. El filtro de vencidos y la conservación de los registros apoyan estos controles. FEFO es la política específica del caso; no sustituye la inspección sanitaria ni los registros de temperatura, que el prototipo no implementa. |
+| [Ley 1990 de 2019](https://normograma.sena.edu.co/compilacion/docs/ley_1990_2019.htm) y [Decreto 375 de 2022](https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=183946): prevención de pérdidas y desperdicio. La [Ley 2536 de 2025, art. 1](https://normograma.invima.gov.co/compilacion/docs/ley_2536_2025.htm) complementa las medidas de las leyes 1990 y 2380 de 2024. | La propuesta busca aprovechar alimentos aptos mediante mejores decisiones de despacho y almacenamiento. La prioridad nutricional no autoriza entregar productos no aptos. Para evaluar su efecto deben registrarse los kg descartados y su causa antes y después de la intervención; las pruebas sintéticas no demuestran una reducción real del desperdicio. |
+| [Ley 1581 de 2012, arts. 4 y 7](https://normograma.dian.gov.co/dian/compilacion/docs/ley_1581_2012.htm): finalidad, seguridad, confidencialidad y protección de los datos de menores. | Los algoritmos usan datos sintéticos de lotes y categorías, sin listados de menores. En una integración real se propone trabajar con códigos de organización y demanda agregada, limitar el acceso y separar los datos personales del optimizador. El tratamiento de datos de menores exige respetar sus derechos e interés superior; no se presume autorizado por recibir una donación. |
+
+**Efectos sobre las personas.** Un jardín infantil puede quedar desatendido
+repetidamente aunque cada ruta alcance su óptimo nutricional. Además de
+las medidas propuestas en §6.2, se recomienda revisar por organización
+las raciones solicitadas, entregadas y los días sin atención. La coordinación
+debe intervenir ante exclusiones persistentes; introducir mínimos de
+cobertura cambia las restricciones de la mochila y exige volver a validar
+el modelo. Un despacho tardío afecta la preparación de comidas; un lote
+vencido compromete la salud. Antes de cargar se propone una segunda
+verificación de aptitud y un registro de las decisiones excepcionales.
+
+**Trazabilidad de las decisiones.** Los índices de selección y de los
+tramos permiten consultar las entradas sin alterarlas. Para un retiro de
+producto, la integración debe asociar cada índice con el `codigo_lote`
+original y conservar por separado donante, fecha de despacho, vehículo y
+organización receptora. En saturación deben conservarse categoría y horas
+de inicio y fin. Una bitácora con la versión del algoritmo y los parámetros
+permitiría reproducir la decisión. La persistencia, los permisos de acceso
+y los procedimientos de retiro son requisitos de integración, no funciones
+implementadas en este ejercicio.
 
 ---
 
