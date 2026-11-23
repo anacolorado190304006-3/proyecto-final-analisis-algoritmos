@@ -14,7 +14,7 @@
 [estrategia.py](src/cargue_vehiculos/estrategia.py) · [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) · [medicion.py](src/cargue_vehiculos/medicion.py) · [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) · [regla_actual.py](src/cargue_vehiculos/regla_actual.py) · [pruebas_contraejemplos.py](src/cargue_vehiculos/pruebas_contraejemplos.py) · [datos.py](src/cargue_vehiculos/datos.py) · [pruebas.py](src/cargue_vehiculos/pruebas.py)
 
 **Código fuente de la operación 4 en `src/saturacion_bodega/`:**  
-[datos.py](src/saturacion_bodega/datos.py) · [pruebas.py](src/saturacion_bodega/pruebas.py)
+[datos.py](src/saturacion_bodega/datos.py) · [pruebas.py](src/saturacion_bodega/pruebas.py) · [exhaustivo.py](src/saturacion_bodega/exhaustivo.py)
 
 El Laboratorio 4 del 18 de noviembre de 2026 aborda la operación 3: cargue de vehículos. Los apartados pendientes del proyecto final se identifican para la entrega del 23 de noviembre.
 
@@ -64,7 +64,40 @@ ordenamiento de bodega corresponde a la operación 2.
 
 ### 1.2. Análisis de las cuatro operaciones del banco
 
-Pendiente para la entrega del 23 de noviembre
+El proceso atiende a 420 organizaciones beneficiarias y mantiene cerca de
+220.000 lotes activos, con 6.000 a 9.000 incorporaciones diarias. Se analizan
+las cuatro operaciones y se seleccionan **cargue y saturación** para la
+implementación experimental: la primera exige una selección óptima con
+capacidad limitada y la segunda permite contrastar algoritmos exactos con
+distintos órdenes de crecimiento.
+
+| Operación | Entradas y salida | Proceso actual y costo | Alternativa y alcance |
+|---|---|---|---|
+| 1. Consulta de inventario | Lotes y código o rango de vencimiento; devuelve un lote o los que vencen en el rango. | Recorre la lista completa: $\Theta(N)$ por consulta. Las 30.000 consultas por código representan aproximadamente 6.600 millones de inspecciones diarias con $N=220.000$, sin contar las consultas por rango. | Índice hash por código: $O(1)$ esperado por consulta; índice ordenado por fecha: $O(\log N+k)$ por rango, con $k$ resultados. Ambos requieren $O(N)$ de almacenamiento adicional y mantenimiento. Propuesta de diseño, sin implementación ni tiempos medidos. |
+| 2. Ordenamiento FEFO | Lista previamente ordenada y nuevos lotes anexados; devuelve el orden por vencimiento y, en empate, categoría. | Inserción: $O((N+m)^2)$ en general. Al aprovechar el prefijo ya ordenado, el peor caso es $O(Nm+m^2+N)$ para $m$ incorporaciones, por los desplazamientos de los lotes nuevos. | Ordenar las incorporaciones y fusionarlas con el inventario: $O(m\log m+N+m)$ temporal y $O(N+m)$ auxiliar, sobre referencias para conservar los registros originales. Propuesta sin implementación experimental. |
+| 3. Cargue de vehículos | 300–600 candidatos por ruta y capacidad de 2.500–4.000 kg; devuelve lotes completos de valor nutricional máximo. | Vencimiento: ordena y se detiene en el primer lote que no cabe. Es rápido, pero no garantiza el óptimo; el 78 % de ocupación informado por el banco es una medida de peso, no de valor nutricional. | Programación dinámica, contrastada con exhaustiva y las dos reglas. El diseño, las pruebas y las mediciones se desarrollan en los apartados siguientes. |
+| 4. Saturación de bodega | Cambios netos horarios en kg por categoría; devuelve suma máxima e índices de un tramo consecutivo no vacío. | Examina todos los tramos: $n(n+1)/2$. Con sumas incrementales, $\Theta(n^2)$ temporal y $O(1)$ auxiliar. El cliente informa más de un día para procesar las 40 categorías. | Exhaustiva como referencia exacta; dividir y vencer y Kadane como alternativas previstas. La comparación debe verificar igualdad de la suma óptima, aunque los índices puedan diferir en empates. |
+
+En las dos primeras filas, $N$ es el inventario previo y $m$ las
+incorporaciones. En saturación, $n=36.000$ horas por categoría implica
+648.018.000 tramos y 25.920.720.000 para las 40 categorías. Estos conteos
+explican el crecimiento del trabajo; no equivalen a tiempos medidos ni
+demuestran cuánto tarda cada operación en el computador del banco.
+
+Las consultas individuales deben responder en menos de un segundo. Las
+consultas por rango, FEFO y cargue comparten la ventana de 03:00 a 05:00;
+el proceso actual tarda cerca de 4,5 horas. El análisis histórico de
+saturación es una tarea distinta y no tiene una frecuencia diaria
+establecida. La línea base energética del proceso completo se desarrolla
+en §4.5; mejorar el cargue por sí solo no demuestra que se cumplan las dos
+horas de planeación.
+
+Los datos se consideran válidos, caben en memoria y no cambian durante la
+ejecución, que usa un único hilo. Deben conservarse los registros originales,
+excluirse los vencidos y respetarse FEFO dentro de cada categoría. El tramo
+de mayor crecimiento no determina por sí solo la capacidad absoluta del
+cuarto frío: también hacen falta el inventario inicial y las condiciones
+de almacenamiento de cada producto.
 
 ---
 
@@ -253,6 +286,16 @@ Para que las pruebas y las mediciones traten igual a todas las estrategias, la s
 * **Empates:** si varios tramos alcanzan la suma máxima, se acepta cualquiera. Dividir y vencer y Kadane pueden elegir tramos distintos, pero la suma debe ser exactamente la máxima.
 * **Trazabilidad:** ninguna estrategia modifica la serie recibida.
 
+La [exhaustiva](src/saturacion_bodega/exhaustivo.py) fija un inicio y amplía
+el final acumulando un cambio por paso, sin recalcular sumas ni copiar
+sublistas. Visita exactamente $n(n+1)/2$ tramos: $\Theta(n^2)$ temporal y
+$O(1)$ de memoria auxiliar bajo el modelo de aritmética de costo constante.
+En empates conserva el menor inicio y, para ese inicio, el menor fin.
+Inicializar el óptimo con la primera hora garantiza un tramo no vacío
+incluso cuando todos los cambios son negativos. Al duplicar $n$, el número
+de tramos se aproxima a cuatro veces el original; por ello no se ejecuta
+la exhaustiva sobre las 36.000 horas en las pruebas de volumen real.
+
 #### 3.3.2. Datos sintéticos
 
 [datos.py](src/saturacion_bodega/datos.py) genera series horarias con la estructura del caso. Con los valores por defecto produce el volumen real: 40 categorías × 36.000 horas (12 horas diarias, 300 días al año, 10 años). Cada hora es un `RegistroHorario` inmutable con `categoria`, `dia`, `hora` y `cambio_kg`.
@@ -311,7 +354,12 @@ Los dos se contrastan entre sí en 300 series. A cada resultado se le aplica `ve
 
 Si una de las tres funciones aún no existe, la suite la marca como `[pendiente]` y termina con código de salida 1, aunque las pruebas de datos pasen. Así no se reporta una suite completa sin las estrategias.
 
-**Estado de la ejecución.** Las 6 pruebas de datos pasan. Las 7 pruebas de estrategias se ejecutan cuando estén `estrategia.py` y `exhaustivo.py` de la operación 4. *Actualizar este párrafo con el resultado final de las 13 pruebas.*
+**Estado de la ejecución.** Pasan las 6 pruebas de datos y las 6 pruebas
+aplicables a la exhaustiva, incluidas 200 series aleatorias y 5 series del
+modelo de 600 horas. El ejemplo devuelve `(11, 2, 5)`. La suite imprime
+13 pruebas, pero `probar_volumen_real` todavía no contrasta estrategias:
+excluye la exhaustiva y faltan dividir y vencer y Kadane. Por esa ausencia
+termina con código 1; la validación integrada permanece pendiente.
 
 ---
 
