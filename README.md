@@ -8,7 +8,7 @@
 * **Walter Alexander Pino Vásquez** — Estrategia algorítmica, modelado y recurrencia.
 * **Ana María Colorado Varela** — Solución exhaustiva, reglas de cargue y contraejemplos.
 * **Juan David Machado Mosquera** — Datos, pruebas y validación.
-* **Franco Moncayo Uribe** — Mediciones, gráficas e integración.
+* **Franco Moncayo Uribe** — Mediciones y gráficas de saturación; línea base energética (§4.5); comparación integral (§5.6), extrapolación y escenario de crecimiento.
 
 **Código fuente en `src/cargue_vehiculos/`:**  
 [estrategia.py](src/cargue_vehiculos/estrategia.py) · [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) · [medicion.py](src/cargue_vehiculos/medicion.py) · [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) · [regla_actual.py](src/cargue_vehiculos/regla_actual.py) · [pruebas_contraejemplos.py](src/cargue_vehiculos/pruebas_contraejemplos.py) · [datos.py](src/cargue_vehiculos/datos.py) · [pruebas.py](src/cargue_vehiculos/pruebas.py)
@@ -759,9 +759,8 @@ estrategias. Antes de cronometrar comprueba que las sumas coincidan; luego
 mide la función completa con `time.perf_counter()`, tras una ejecución de
 calentamiento y con **cinco repeticiones**, y publica la media. Los tiempos
 individuales están en [resultados.json](graficas/saturacion_bodega/resultados.json).
-Esta ejecución usó Python 3.13 en Linux y un solo hilo; no es el mismo
-equipo que las mediciones del cargue, por lo que las tablas de §4.2 y §4.6
-no deben compararse entre sí en valor absoluto.
+Esta ejecución usó Python 3.13 y un solo hilo. Los tiempos
+individuales están en [resultados.json](graficas/saturacion_bodega/resultados.json).
 
 ![Saturación: tiempo frente a n](graficas/saturacion_bodega/tiempo_vs_n.png)
 
@@ -770,20 +769,20 @@ La exhaustiva solo se mide hasta 4000 horas; a 36.000 horas haría unos
 
 | $n$ (horas) | Exhaustiva (s) | Dividir y vencer (s) | Kadane (s) |
 |---:|---:|---:|---:|
-| 250 | 0,001119 | — | — |
-| 500 | 0,004683 | — | — |
-| 1000 | 0,025781 | 0,000846 | 0,000050 |
-| 2000 | 0,082849 | — | — |
-| 2250 | — | 0,002085 | 0,000117 |
-| 4000 | 0,338066 | — | — |
-| 4500 | — | 0,004667 | 0,000227 |
-| 9000 | — | 0,009324 | 0,000464 |
-| 18000 | — | 0,020251 | 0,000915 |
-| 36000 | no se ejecuta | 0,040259 | 0,001826 |
+| 250 | 0,002295 | — | — |
+| 500 | 0,008214 | — | — |
+| 1000 | 0,034689 | 0,001292 | 0,000059 |
+| 2000 | 0,099310 | — | — |
+| 2250 | — | 0,003112 | 0,000131 |
+| 4000 | 0,412924 | — | — |
+| 4500 | — | 0,006818 | 0,000265 |
+| 9000 | — | 0,015483 | 0,000511 |
+| 18000 | — | 0,029016 | 0,001037 |
+| 36000 | no se ejecuta | 0,060190 | 0,002099 |
 
-Al duplicar $n$, la exhaustiva multiplica el tiempo por 3,2 a 5,5 (en
+Al duplicar $n$, la exhaustiva multiplica el tiempo por 3,0 a 4,2 (en
 promedio cerca de 4, lo esperado para $\Theta(n^2)$; los tamaños pequeños
-tienen más ruido). Dividir y vencer lo multiplica por 2,0 a 2,2 en los
+tienen más ruido). Dividir y vencer lo multiplica por 1,9 a 2,2 en los
 últimos tres duplicados y Kadane por 1,9 a 2,1, coherente con $\Theta(n\log n)$
 y $\Theta(n)$. Estas son relaciones observadas, no una demostración de las
 cotas.
@@ -792,9 +791,9 @@ cotas.
 
 | Estrategia | Tiempo de las 40 categorías | Energía por ejecución (kWh) |
 |---|---:|---:|
-| Dividir y vencer | 1,693 s | $7{,}05\times10^{-5}$ |
-| Kadane | 0,103 s | $4{,}27\times10^{-6}$ |
-| Exhaustiva (extrapolada) | ≈ 1095 s (≈ 18 min) | ≈ 0,0456 |
+| Dividir y vencer | 2,484 s | $1{,}035\times10^{-4}$ |
+| Kadane | 0,088 s | $3{,}67\times10^{-6}$ |
+| Exhaustiva (extrapolada) | ≈ 1338 s (≈ 22,3 min) | ≈ 0,0558 |
 
 Las dos estrategias rápidas devolvieron la misma suma en las 40 categorías.
 La estimación de la exhaustiva escala el tiempo medido con 4000 horas por
