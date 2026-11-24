@@ -1,12 +1,12 @@
-# Cargue de vehículos: mochila 0/1 con programación dinámica
+# Planeación de despachos y saturación de bodega
 
 **Caso 3 — Banco Regional de Alimentos**  
-**Laboratorio Evaluativo 04 / Avance de Proyecto Final**
+**Proyecto final — Análisis de Algoritmos — 23 de noviembre de 2026**
 
 **Integrantes y roles**
 
 * **Walter Alexander Pino Vásquez** — Estrategia algorítmica, modelado y recurrencia.
-* **Ana María Colorado Varela** — Solución exhaustiva, reglas de cargue y contraejemplos.
+* **Ana María Colorado Varela** — Soluciones exhaustivas, reglas de cargue, contraejemplos e integración del informe.
 * **Juan David Machado Mosquera** — Datos, pruebas y validación.
 * **Franco Moncayo Uribe** — Mediciones y gráficas de saturación; línea base energética (§4.5); comparación integral (§5.6), extrapolación y escenario de crecimiento.
 
@@ -212,58 +212,27 @@ La condición que hace útil la división es que combinar sea barato frente al
 trabajo que se evita. Aquí lo es porque el mejor tramo cruzado se obtiene
 sumando dos óptimos parciales, sin probar pares de extremos.
 
-#### 2.5.3. Pseudocódigo
+#### 2.5.3. Pseudocódigo y recurrencia de Kadane
 
-```
-TRAMO-MAXIMO-DIVIDIR(cambios):
-    si cambios está vacío: lanzar ValueError
-    devolver DIVIDIR(cambios, 0, n - 1)
-
+```text
 DIVIDIR(cambios, inicio, fin):
-    si inicio = fin:                                  // caso base: una hora
-        devolver (cambios[inicio], inicio, fin)
-    medio ← (inicio + fin) // 2                       // dividir
-    izq ← DIVIDIR(cambios, inicio, medio)             // conquistar
+    si inicio = fin: devolver (cambios[inicio], inicio, fin)
+    medio ← (inicio + fin) // 2
+    izq ← DIVIDIR(cambios, inicio, medio)
     der ← DIVIDIR(cambios, medio + 1, fin)
-    cruz ← CRUZADO(cambios, inicio, medio, fin)       // combinar
-    devolver el de mayor suma entre izq, der y cruz
-
-CRUZADO(cambios, inicio, medio, fin):
-    suma ← 0; mejor_izq ← cambios[medio]; ini ← medio
-    para hora desde medio hasta inicio, bajando de uno en uno:
-        suma ← suma + cambios[hora]
-        si suma > mejor_izq: mejor_izq ← suma; ini ← hora
-    suma ← 0; mejor_der ← cambios[medio + 1]; fin_tramo ← medio + 1
-    para hora desde medio + 1 hasta fin:
-        suma ← suma + cambios[hora]
-        si suma > mejor_der: mejor_der ← suma; fin_tramo ← hora
-    devolver (mejor_izq + mejor_der, ini, fin_tramo)
+    cruz ← mejor sufijo izquierdo + mejor prefijo derecho
+    devolver el tramo de mayor suma entre izq, der y cruz
 ```
 
-Kadane se apoya en una recurrencia sobre el mejor tramo que *termina* en la
-hora $i$, que llamamos $E[i]$:
+Kadane conserva el mejor tramo que termina en la hora $i$:
 
-$$E[0] = c_0, \qquad E[i] = \max(c_i,\; E[i-1] + c_i), \qquad
-\text{respuesta} = \max_i E[i].$$
+$$E[0]=c_0,\qquad E[i]=\max(c_i,E[i-1]+c_i),\qquad
+\text{respuesta}=\max_i E[i].$$
 
-Si $E[i-1]$ es negativo, arrastrarlo solo resta, y el tramo empieza de nuevo
-en la hora $i$. Como $E[i]$ solo depende de $E[i-1]$, basta una variable en
-lugar de un arreglo.
-
-```
-TRAMO-MAXIMO-KADANE(cambios):
-    si cambios está vacío: lanzar ValueError
-    mejor ← actual ← cambios[0]
-    inicio_actual ← 0; (mejor_ini, mejor_fin) ← (0, 0)
-    para hora desde 1 hasta n - 1:
-        si actual < 0:                       // el pasado resta: reiniciar
-            actual ← cambios[hora]; inicio_actual ← hora
-        si no:
-            actual ← actual + cambios[hora]
-        si actual > mejor:
-            mejor ← actual; (mejor_ini, mejor_fin) ← (inicio_actual, hora)
-    devolver (mejor, mejor_ini, mejor_fin)
-```
+Si el acumulado anterior es negativo, reinicia el tramo; en caso contrario
+lo extiende. Solo necesita el estado anterior y los índices del mejor
+tramo. Ambas funciones rechazan la entrada vacía. El [anexo B](#anexo-b-pseudocódigo-completo-de-saturación)
+conserva el pseudocódigo completo, incluidos los barridos y la reconstrucción.
 
 #### 2.5.4. Ejemplo resuelto a mano
 
@@ -320,8 +289,8 @@ no exige condición de regularidad, y resulta $T(n) = \Theta(n\log n)$.
 **Conteo de operaciones con el volumen real.** Para $n = 36.000$ horas por
 categoría, la exhaustiva visita 648.018.000 tramos, es decir, 25.920.720.000
 para las 40 categorías (§1.2). Dividir y vencer hace del orden de
-$n\log_2 n \approx 5{,}4\times10^{5}$ sumas por categoría, y Kadane hace
-$36.000$. La exhaustiva hace entonces unas 18.000 veces más pasos que
+$n\log_2 n \approx 5{,}4\times10^{5}$ sumas por categoría, y Kadane procesa
+$36.000$ horas (las extensiones y reinicios dependen de los signos). La exhaustiva hace entonces unas 18.000 veces más pasos que
 Kadane y unas 1.200 veces más que dividir y vencer. Son conteos del crecimiento
 del trabajo, no tiempos medidos.
 
@@ -354,11 +323,9 @@ porque llega a la misma suma por un camino distinto.
 
 Las cuatro funciones de cargue utilizan `Lote = tuple[int, int, int]`, correspondiente a `(peso_kg, valor_nutricional, dias_para_vencer)`. Reciben `lotes: list[Lote]` y `capacidad_kg: int`; devuelven `tuple[int, list[int]]`: valor nutricional e índices originales en base cero, ascendentes y sin repeticiones.
 
-| Módulo | Funciones y particularidades |
-|---|---|
-| [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) | `cargar_exhaustivo(lotes, capacidad_kg)`: enumera por cantidad de lotes y luego por orden lexicográfico de índices. Entre óptimos empatados conserva el de menos lotes y, después, el menor orden lexicográfico. No almacena todos los subconjuntos. |
-| [regla_actual.py](src/cargue_vehiculos/regla_actual.py) | `cargar_por_vencimiento(lotes, capacidad_kg)` y `cargar_por_densidad(lotes, capacidad_kg)`: conservan el orden de entrada en empates. La segunda compara razones exactamente con `Fraction`. |
-| [estrategia.py](src/cargue_vehiculos/estrategia.py) | `cargar_vehiculo(lotes, capacidad_kg)`: valida las tuplas y adapta peso y valor a `mochila_01`, conservando la implementación y los índices. En empates, DP conserva la opción sin el lote evaluado; puede devolver otro óptimo que la exhaustiva. |
+Las interfaces son `cargar_vehiculo`, `cargar_exhaustivo`,
+`cargar_por_vencimiento` y `cargar_por_densidad`. Sus módulos, adaptaciones
+y desempates se detallan en el [anexo A.5](#a5-interfaces-del-cargue).
 
 Las cuatro funciones no modifican la lista ni sus registros. Validan pesos enteros positivos, valores nutricionales enteros no negativos, días enteros y capacidad entera no negativa; rechazan booleanos como enteros. DP y las reglas reutilizan la validación de `exhaustivo.py`, sin ejecutar la búsqueda exhaustiva. Los candidatos deben ser aptos para despacho: estas funciones no filtran lotes vencidos.
 
@@ -366,7 +333,7 @@ Las cuatro funciones no modifican la lista ni sus registros. Validan pesos enter
 
 La suite de pruebas en [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) comprueba con `assert`:
 
-* El ejemplo a mano (valor 12, lotes 2 y 3).
+* El ejemplo original de tres lotes (valor 12, lotes 2 y 3); el ejemplo de cuatro lotes de §2.3 se verifica en la suite consolidada.
 * Casos borde: lista vacía, capacidad 0, nada cabe, todo cabe, ajuste exacto y empates.
 * 300 instancias aleatorias pequeñas comparadas contra la función `fuerza_bruta` de esa misma suite, verificando que el valor coincida exactamente y que los lotes elegidos no superen la capacidad.
 * 100 instancias con parámetros del caso (pesos de 20 a 600 kg, $W$ de 2.500 a 4.000 kg) comprobando que la mochila 0/1 no es inferior a `cargue_por_vencimiento` de `estrategia.py` en esas instancias.
@@ -383,49 +350,15 @@ Se reutiliza `verificar_solucion` de la suite existente. Los resultados exactos 
 
 #### 3.2.1. Datos sintéticos
 
-[datos.py](src/cargue_vehiculos/datos.py) genera lotes con la estructura entregada por el cliente. Cada lote es un `RegistroLote` inmutable (`dataclass(frozen=True)`) con `codigo_lote`, `categoria`, `fecha_vencimiento`, `peso_kg`, `raciones` y `donante`; intentar modificarlo lanza `FrozenInstanceError`, lo que protege la trazabilidad sanitaria del registro original.
+[datos.py](src/cargue_vehiculos/datos.py) conserva cada lote en un `RegistroLote` inmutable, con código, categoría, vencimiento, peso, raciones y donante. Genera rutas de 300–600 lotes y capacidades de 2.500–4.000 kg, excluye vencidos y adapta las entradas sin perder su orden. El valor nutricional es raciones por prioridad.
 
-| Parámetro | Valor sintético | Fuente |
-|---|---|---|
-| Lotes candidatos por ruta | 300 a 600 | Enunciado del caso |
-| Capacidad del vehículo | 2.500 a 4.000 kg | Enunciado del caso |
-| Peso por lote | 20 a 600 kg, entero | Supuesto del equipo, igual al de `medicion.py` |
-| Raciones | 2 a 4 por kg | Supuesto del equipo |
-| Categorías | 40: 12 de proteína, 10 de frutas y verduras, 18 de otros | Enunciado (40 categorías y 3 grupos de prioridad) |
-| Prioridad de la categoría | proteína 3, frutas y verduras 2, otros 1 | Supuesto del equipo |
-| Vencimiento | 0 a 30 días tras el despacho; el inventario puede incluir lotes vencidos hasta hace 5 días | Supuesto del equipo |
-
-El valor nutricional es `raciones × prioridad`, de modo que cada kilogramo aporta entre 2 y 12 unidades, el mismo rango que usa `medicion.py`. Las funciones públicas son:
-
-| Función | Uso |
-|---|---|
-| `generar_inventario(n, semilla, fecha_despacho, incluir_vencidos)` | Inventario de `n` lotes con códigos únicos; puede incluir lotes vencidos para probar su exclusión. |
-| `generar_ruta(semilla, n)` | Candidatos aptos de una ruta y capacidad del vehículo, en los rangos del caso. |
-| `generar_instancia_pequena(n, semilla)` | Instancias pequeñas (1–16 lotes en las pruebas), con límites de capacidad del 30 % y 70 % del peso total redondeados hacia abajo, para contrastar con la exhaustiva. |
-| `filtrar_aptos(lotes, fecha_despacho)` | Lista nueva sin los lotes vencidos; no modifica la entrada. |
-| `a_tuplas(lotes, fecha_despacho)` | Convierte a `Lote = (peso_kg, valor_nutricional, dias_para_vencer)` para `exhaustivo.py` y `regla_actual.py`. |
-| `a_listas(lotes)` | Separa pesos y valores para `mochila_01`, conservando los índices. |
-
-Cada generador usa su propio `random.Random(semilla)`: la misma semilla reproduce exactamente los mismos datos y no altera el estado global de `random`. La semilla base es `SEMILLA_BASE = 2026` y la fecha de despacho de referencia es el 18 de noviembre de 2026.
+Cada generador usa `random.Random(semilla)`, con semilla base 2026 y fecha de referencia del 18 de noviembre de 2026. Los rangos sintéticos, supuestos y funciones se detallan en el [anexo A.1](#a1-generación-de-datos-del-cargue).
 
 #### 3.2.2. Suite consolidada
 
 [pruebas.py](src/cargue_vehiculos/pruebas.py) es el punto único de verificación del cargue. Ejecuta los cuatro algoritmos (DP, exhaustiva, vencimiento y densidad) con la misma interfaz y aplica a cada salida la función `verificar_cargue`. Esa función comprueba que los índices sean enteros, únicos, ordenados y válidos; que el peso no supere la capacidad; y que el valor sea exactamente la suma de los registros completos elegidos. Así se verifica que ningún lote se fraccione. También comprueba que ningún algoritmo modifique los lotes recibidos.
 
-| Prueba | Qué verifica |
-|---|---|
-| `probar_reproducibilidad` | Misma semilla, mismos datos; semilla distinta, datos distintos. |
-| `probar_rangos_del_caso` | Pesos, categorías y códigos únicos en 2.000 lotes; 300 a 600 candidatos y 2.500 a 4.000 kg en 20 rutas, y que los candidatos no quepan todos en el vehículo. |
-| `probar_registros_inmutables` | El registro original no puede modificarse. |
-| `probar_filtrado_de_vencidos` | Filtra sin modificar el inventario y verifica selecciones aptas: DP y reglas sobre el conjunto filtrado; exhaustiva sobre ocho candidatos. |
-| `probar_adaptadores` | `a_tuplas` y `a_listas` conservan el orden y la correspondencia de índices. |
-| `probar_casos_limite` | 14 casos con valor óptimo conocido, para los cuatro algoritmos: sin lotes, capacidad cero, nada cabe, todo cabe, ajuste exacto, un kilogramo de menos, capacidad igual al peso total y uno menos, valores cero, pesos iguales, empate de valor, lote de 1 kg, lote más pesado que el vehículo y lote que vence el día del despacho. |
-| `probar_ejemplo_manual` | Todas las celdas del ejemplo de cuatro lotes y óptimo 14, índices `[0, 3]`. |
-| `probar_desempates` | Estabilidad por fecha y densidad; comportamiento de DP y exhaustiva entre óptimos. |
-| `probar_excepciones` | Capacidad negativa, peso no positivo, valor negativo, números no enteros, booleanos y tuplas mal formadas lanzan `ValueError` en las cuatro interfaces. |
-| `probar_aleatorias_contra_exhaustiva` | 40 instancias aleatorias (el mínimo exigido es 20) de 1 a 16 lotes, con semillas 1000 a 1039: la DP alcanza el mismo valor que `cargar_exhaustivo` y ninguna regla voraz lo supera. |
-| `probar_rutas_tamano_real` | 3 rutas de tamaño real: cargues válidos y DP con valor mayor o igual al de ambas reglas. La exhaustiva no se ejecuta a este tamaño ($2^{300}$ subconjuntos o más). |
-| `ejecutar_suites_previas` | Ejecuta todas las pruebas de `pruebas_mochila.py` y `pruebas_contraejemplos.py`, sin imprimir sus tablas. |
+La matriz de los 12 grupos de pruebas está en el [anexo A.2](#a2-matriz-de-pruebas-del-cargue).
 
 **Resultados de la ejecución.** Los 12 grupos de pruebas pasaron con Python 3.14.7. En las 40 instancias aleatorias la DP coincidió con la exhaustiva; la regla por vencimiento quedó por debajo del óptimo en 34 de ellas. En las tres rutas de tamaño real, la DP ocupó el 100 % de la capacidad del vehículo:
 
@@ -439,7 +372,7 @@ Estas ocupaciones dependen de los datos sintéticos, que contienen muchos lotes 
 
 `medicion.py` usa estos mismos generadores y las cuatro funciones de cargue. La suite original conserva su fuerza bruta como oráculo independiente; las mediciones usan únicamente `cargar_exhaustivo`.
 
-### 3.3. Operación 4: datos sintéticos y pruebas de la saturación de bodega — Integrante 3: Juan David Machado Mosquera
+### 3.3. Operación 4: datos sintéticos y pruebas de saturación
 
 La operación 4 busca, para cada categoría, el tramo de horas consecutivas en que más creció el inventario. Su código está en `src/saturacion_bodega/`, separado del cargue, con los mismos nombres de módulo.
 
@@ -472,59 +405,27 @@ la exhaustiva sobre las 36.000 horas en las pruebas de volumen real.
 
 #### 3.3.2. Datos sintéticos
 
-[datos.py](src/saturacion_bodega/datos.py) genera series horarias con la estructura del caso. Con los valores por defecto produce el volumen real: 40 categorías × 36.000 horas (12 horas diarias, 300 días al año, 10 años). Cada hora es un `RegistroHorario` inmutable con `categoria`, `dia`, `hora` y `cambio_kg`.
+[datos.py](src/saturacion_bodega/datos.py) produce 40 series de 36.000 horas (12 horas diarias, 300 días al año y 10 años). Los registros horarios son inmutables y cada categoría tiene una semilla propia, derivada de la semilla base 2026.
 
-Las cifras del modelo son supuestos del equipo. Buscan que la serie tenga un tramo de saturación con sentido para el negocio:
-
-| Componente | Valor | Propósito |
-|---|---|---|
-| Escala de la categoría | 20 a 200 kg por hora | Categorías pequeñas y grandes |
-| Patrón diario | Entradas en la mañana y salidas en la tarde; promedio cero | Movimiento normal de la bodega |
-| Temporada alta | Últimos 50 días operativos de cada año, +40 % de la escala por hora | Saturación de fin de año que debe detectarse |
-| Fuera de temporada | −20 % de la escala por hora | Saldo anual negativo: el inventario no crece sin límite |
-| Ruido | Gaussiano, desviación del 50 % de la escala | Variación horaria |
-| Eventos | Donación grande (1 %, +2 a 6 veces la escala) y descarte (0,5 %, −2 a 4 veces la escala) | Picos aislados |
-
-Con este modelo el saldo de diez años es negativo y el tramo máximo dura una temporada. Según el oráculo de la suite, con las semillas 0 a 7 dura entre 594 y 641 horas y siempre empieza entre los días 249 y 251 del año. Así el resultado no es trivial: no coincide con toda la serie ni con una sola hora.
-
-| Función | Uso |
-|---|---|
-| `generar_serie(n, semilla)` | Serie de `n` horas de una categoría |
-| `generar_historico(horas, categorias, semilla)` | Una serie por categoría; la categoría k usa la semilla `semilla + k` |
-| `generar_registros(categoria, n, semilla)` | Registros originales inmutables |
-| `generar_serie_pequena(n, semilla, rango_kg)` | Valores uniformes en ±`rango_kg`, para contrastar con la exhaustiva; con rangos pequeños aparecen empates y ceros |
-| `a_serie(registros)` | Extrae los cambios sin modificar los registros |
-| `describir_hora(indice)` | Convierte un índice en texto, por ejemplo "año 9, día 250, 06:00", para reportar el tramo |
-
-Cada generador usa su propio `random.Random(semilla)`, con semilla base `SEMILLA_BASE = 2026`.
+El modelo incorpora movimientos diarios, temporada alta, ruido y eventos de donación y descarte. Son supuestos sintéticos: el saldo total es negativo y el máximo se concentra en una temporada, de modo que no basta elegir toda la serie o una sola hora. Los parámetros y funciones están en el [anexo A.3](#a3-generación-de-datos-de-saturación).
 
 #### 3.3.3. Pruebas
 
 [pruebas.py](src/saturacion_bodega/pruebas.py) no depende del código de las estrategias para saber la respuesta correcta. Trae dos oráculos propios:
+
 * uno que revisa todos los tramos por definición, en $\Theta(n^2)$;
 * otro con sumas prefijas, $\max_{i<j}(P_j - P_i)$, en $\Theta(n)$, para las series largas.
 
 Los dos se contrastan entre sí en 300 series. A cada resultado se le aplica `verificar_tramo`, que comprueba:
+
 * que la salida sea `(suma, inicio, fin)` con enteros;
 * que se cumpla $0 \le \text{inicio} \le \text{fin} < n$;
 * que la suma reportada sea exactamente la del tramo;
 * que esa suma sea la máxima. Esta es la restricción del negocio: el tramo reportado es el de mayor crecimiento acumulado, no una aproximación.
 
-| Prueba | Qué verifica |
-|---|---|
-| `probar_reproducibilidad`, `probar_volumen_del_caso` | Misma semilla, misma serie. Volumen real de 40 × 36.000 y una serie distinta por categoría. |
-| `probar_forma_de_la_serie` | Series de 36.000 horas con valores enteros y de ambos signos, y saldo negativo. El tramo máximo dura más de un día, menos de un año y empieza en temporada. |
-| `probar_registros_y_adaptadores`, `probar_describir_hora` | Registros inmutables y en orden, y conversión de índices a fechas. |
-| `probar_oraculos` | Los dos oráculos coinciden en 300 series. |
-| `probar_casos_limite` | 16 casos con resultado conocido: una hora (positiva, negativa o cero), todas negativas, todas positivas, máximo al inicio o al final, tramo en la mitad izquierda, en la derecha y cruzando la mitad, pico aislado, el ejemplo de CLRS (43, horas 7 a 10) y tres casos de empate. |
-| `probar_ejemplo_manual` | El ejemplo para resolver a mano da exactamente `(11, 2, 5)`. |
-| `probar_serie_vacia` | Las tres estrategias lanzan `ValueError`. |
-| `probar_no_modifica_entrada` | Ninguna estrategia altera la serie. |
-| `probar_aleatorias_contra_oraculo` | 200 series de 1 a 64 horas (el mínimo exigido es 20), con rangos de ±2 a ±500 kg y semillas 4000 a 4199. |
-| `probar_series_del_modelo` | 5 series del modelo de 600 horas, incluida la exhaustiva. |
-| `probar_volumen_real` | 3 categorías de 36.000 horas con dividir y vencer y Kadane. La exhaustiva no se ejecuta: serían unos $6{,}5 \times 10^8$ tramos por categoría. |
+La matriz de pruebas está en el [anexo A.4](#a4-matriz-de-pruebas-de-saturación).
 
-**Ejemplo para resolver a mano.** Son 8 horas, en kg: `[3, -5, 4, -1, 2, 6, -9, 5]`. El tramo máximo son las horas 2 a 5, con 11 kg (4 − 1 + 2 + 6). Dividir y vencer parte la serie en las horas 0–3 y 4–7. El óptimo cruza esa mitad: la mejor suma que termina en la hora 3 por la izquierda es 4 − 1 = 3, y la mejor que empieza en la hora 4 por la derecha es 2 + 6 = 8.
+El ejemplo manual de §2.5.4 se verifica con las tres estrategias.
 
 Si una de las tres funciones aún no existe, la suite la marca como `[pendiente]` y termina con código de salida 1, aunque las pruebas de datos pasen. Así no se reporta una suite completa sin las estrategias.
 
@@ -579,7 +480,8 @@ verificación externa, los conteos y el dibujo quedan fuera del cronómetro.
 
 Los tiempos individuales, selecciones, semillas, huellas de las entradas y
 el entorno se conservan en [resultados.json](graficas/cargue_vehiculos/resultados.json).
-La ejecución registrada usa Python 3.14.7 sobre WSL Ubuntu, en un solo hilo.
+La ejecución registrada usa Python 3.13.14 sobre Windows 11, en un solo hilo.
+La validación final se ejecutó además en WSL Ubuntu con Python 3.14.7.
 Los tiempos dependen de la carga del equipo; las cifras de las tablas están
 redondeadas y los cocientes se calculan antes del redondeo.
 
@@ -593,26 +495,26 @@ logarítmica permite distinguir las curvas más rápidas.
 
 | $n$ | DP (ms) | Exhaustiva (ms) | Vencimiento (ms) | Densidad (ms) |
 |---:|---:|---:|---:|---:|
-| 4 | 0,273526 | 0,025087 | 0,007528 | 0,014079 |
-| 6 | 0,434409 | 0,075378 | 0,008437 | 0,017849 |
-| 8 | 0,545298 | 0,411054 | 0,009851 | 0,023005 |
-| 10 | 0,521212 | 1,129124 | 0,021637 | 0,054098 |
-| 12 | 0,714171 | 6,107675 | 0,014746 | 0,039478 |
-| 14 | 0,806153 | 24,653482 | 0,017094 | 0,050858 |
-| 16 | 0,884439 | 82,821107 | 0,015682 | 0,043914 |
-| 18 | 0,987400 | 358,612014 | 0,016125 | 0,048586 |
+| 4 | 0,354900 | 0,024200 | 0,006660 | 0,014860 |
+| 6 | 0,518700 | 0,071480 | 0,016100 | 0,029460 |
+| 8 | 0,953640 | 0,276380 | 0,009480 | 0,024840 |
+| 10 | 0,730440 | 1,145880 | 0,011780 | 0,033080 |
+| 12 | 0,844320 | 5,011400 | 0,014020 | 0,033340 |
+| 14 | 1,091400 | 22,197900 | 0,018180 | 0,060700 |
+| 16 | 1,274060 | 118,365220 | 0,024260 | 0,070320 |
+| 18 | 2,709860 | 729,918560 | 0,018840 | 0,054560 |
 
 Escalabilidad con $W=4000$ kg:
 
 | $n$ | DP (ms) | Vencimiento (ms) | Densidad (ms) |
 |---:|---:|---:|---:|
-| 50 | 13,221871 | 0,034718 | 0,156358 |
-| 100 | 24,478858 | 0,185418 | 0,405644 |
-| 200 | 51,483919 | 0,120957 | 0,839582 |
-| 400 | 110,398151 | 0,314673 | 1,428155 |
-| 600 | 163,828430 | 0,368933 | 2,422264 |
-| 1000 | 252,314926 | 0,746552 | 3,941349 |
-| 2000 | 488,327088 | 1,562111 | 8,786330 |
+| 50 | 18,545580 | 0,042980 | 0,389740 |
+| 100 | 66,798280 | 0,147800 | 0,638580 |
+| 200 | 69,808980 | 0,154340 | 0,824960 |
+| 400 | 268,141280 | 0,354100 | 2,379980 |
+| 600 | 270,672860 | 0,451880 | 2,509420 |
+| 1000 | 355,840120 | 0,749120 | 4,314600 |
+| 2000 | 609,238780 | 1,602900 | 8,303460 |
 
 #### 4.2.2. Conteos y contraste al duplicar el tamaño
 
@@ -639,10 +541,10 @@ Para $n=8$ y $n=16$, con la misma capacidad:
 
 | Estrategia | Factor de tiempo | Factor del conteo | Referencia teórica |
 |---|---:|---:|---|
-| DP | 1,6219 | 1,9927 | 2 para $nW$; las celdas útiles dependen de los pesos |
-| Exhaustiva | 201,4847 | 256,0000 | 512 para $n2^n$; 256 para los subconjuntos |
-| Vencimiento | 1,5919 | 1,0000 | 8/3 para la cota $n\log_2 n$; el conteo excluye ordenar |
-| Densidad | 1,9089 | 2,0000 | 8/3 para la cota $n\log_2 n$; el recorrido compara $n$ lotes |
+| DP | 1,3360 | 1,9927 | 2 para $nW$; las celdas útiles dependen de los pesos |
+| Exhaustiva | 428,2698 | 256,0000 | 512 para $n2^n$; 256 para los subconjuntos |
+| Vencimiento | 2,5591 | 1,0000 | 8/3 para la cota $n\log_2 n$; el conteo excluye ordenar |
+| Densidad | 2,8309 | 2,0000 | 8/3 para la cota $n\log_2 n$; el recorrido compara $n$ lotes |
 
 La exhaustiva explora exactamente 256 veces más subconjuntos al pasar de 8
 a 16 lotes, pero debe sumar más elementos por subconjunto; el conteo no
@@ -666,19 +568,22 @@ Se conservan los mismos 400 lotes y solo cambia $W$.
 
 | $W$ (kg) | DP (s) | Celdas evaluadas | ns por celda |
 |---:|---:|---:|---:|
-| 500 | 0,00522916 | 77074 | 67,846 |
-| 1000 | 0,01818258 | 273350 | 66,518 |
-| 2000 | 0,04589030 | 673350 | 68,152 |
-| 4000 | 0,10324299 | 1473350 | 70,074 |
-| 8000 | 0,22046613 | 3073350 | 71,735 |
+| 500 | 0,00603234 | 77074 | 78,267 |
+| 1000 | 0,02120746 | 273350 | 77,584 |
+| 2000 | 0,09160578 | 673350 | 136,045 |
+| 4000 | 0,13630892 | 1473350 | 92,516 |
+| 8000 | 0,30880508 | 3073350 | 100,478 |
 
-De 1000 a 2000 kg, el tiempo se multiplica por **2,5239**
+De 1000 a 2000 kg, el tiempo se multiplica por **4,3195**
 y las celdas por **2,4633**.
-De 2000 a 4000 kg los factores son **2,2498** y
+De 2000 a 4000 kg los factores son **1,4880** y
 **2,1881**, respectivamente. Las celdas crecen
 más del doble porque el límite inferior de cada recorrido depende del peso
 del lote. Los resultados son compatibles con la dependencia de $W$;
-no constituyen una demostración experimental de la cota.
+no constituyen una demostración experimental de la cota. El costo por celda
+varía entre capacidades; el salto observado en 2000 kg no se explica
+solo por contar celdas. No se aisló su causa y no se supone una constante
+temporal universal para extrapolar.
 
 ### 4.3. Extrapolación al volumen real
 
@@ -686,10 +591,10 @@ Se considera el extremo de 600 lotes por ruta, 4000 kg y 14 vehículos
 procesados secuencialmente. Los modelos se calibran con las medias del
 registro anterior, no con una constante temporal supuesta:
 
-- **DP:** referencia de 2000 lotes y 4000 kg, 0,488327088 s; se escala con $nW$.
-- **Vencimiento:** 0,001562111 s para 2000 lotes; se usa $n\log_2 n$ para modelar la ordenación.
-- **Densidad:** 0,008786330 s para 2000 lotes; se adopta el mismo modelo $n\log_2 n$.
-- **Exhaustiva:** 0,358612014 s para 18 lotes; se escala con $n2^n$. La capacidad no cambia el número de subconjuntos ni las dos sumas de esta implementación.
+- **DP:** referencia de 2000 lotes y 4000 kg, 0,609238780 s; se escala con $nW$.
+- **Vencimiento:** 0,001602900 s para 2000 lotes; se usa $n\log_2 n$ para modelar la ordenación.
+- **Densidad:** 0,008303460 s para 2000 lotes; se adopta el mismo modelo $n\log_2 n$.
+- **Exhaustiva:** 0,729918560 s para 18 lotes; se escala con $n2^n$. La capacidad no cambia el número de subconjuntos ni las dos sumas de esta implementación.
 
 Los factores son $600/2000$ para DP, $(600\log_2 600)/(2000\log_2 2000)$
 para las reglas y $(600/18)2^{600-18}$ para exhaustiva. Para DP, el cociente
@@ -700,21 +605,21 @@ exhaustiva sobre 600 lotes.
 
 | Estrategia | Tiempo estimado por vehículo (s) | Tiempo estimado de 14 vehículos (s) | Ventana de 7200 s |
 |---|---:|---:|---|
-| DP | 0,146498 | 2,050974 | Cabe en el modelo |
-| Exhaustiva | 1,892174e+176 | 2,649044e+177 | No es viable |
-| Vencimiento | 0,000394 | 0,005522 | Cabe en el modelo |
-| Densidad | 0,002218 | 0,031057 | Cabe en el modelo |
+| DP | 0,182772 | 2,558803 | Cabe en el modelo |
+| Exhaustiva | 3.851329e+176 | 5.391861e+177 | No es viable |
+| Vencimiento | 0,000405 | 0,005666 | Cabe en el modelo |
+| Densidad | 0,002096 | 0,029350 | Cabe en el modelo |
 
 Como comprobación del modelo, la instancia sintética de 600 lotes tardó
-**0,163828430 s** por vehículo, frente a la estimación de
-**0,146498126 s**. La diferencia absoluta relativa
-a la medición es **10,58 %**.
+**0,270672860 s** por vehículo, frente a la estimación de
+**0,182771634 s**. La diferencia absoluta relativa
+a la medición es **32,48 %**.
 Esto muestra la incertidumbre de trasladar una constante entre tamaños.
 
 ### 4.4. Ajuste a la ventana y límites
 
 La ventana de 03:00 a 05:00 se comparte con las operaciones 1 y 2.
-El cómputo estimado de DP ocupa **2,050974 s** para
+El cómputo estimado de DP ocupa **2,558803 s** para
 los 14 vehículos, por debajo de las dos horas, pero no certifica el tiempo
 del proceso completo. La exhaustiva resulta inviable a escala real.
 
@@ -741,7 +646,7 @@ $$E_{\text{día}}=P\cdot t,\qquad E_{\text{año}}=300\,E_{\text{día}}.$$
 | Diferencia si se alcanza la meta | 2,5 h | 0,375 | 112,5 |
 
 Dentro de esa línea base, el cargue optimizado con programación dinámica
-representa unos 2,05 s diarios (§4.3), es decir, $8{,}5\times10^{-5}$ kWh
+representa unos 2,56 s diarios (§4.3), es decir, $1{,}066\times10^{-4}$ kWh
 por día (§6.1). Frente a 0,675 kWh diarios es una fracción del orden de
 $10^{-4}$. Por eso la energía del proceso completo no la determina el
 cargue: depende de las demás operaciones (consulta, FEFO y preparación de
@@ -759,8 +664,10 @@ estrategias. Antes de cronometrar comprueba que las sumas coincidan; luego
 mide la función completa con `time.perf_counter()`, tras una ejecución de
 calentamiento y con **cinco repeticiones**, y publica la media. Los tiempos
 individuales están en [resultados.json](graficas/saturacion_bodega/resultados.json).
-Esta ejecución usó Python 3.13 y un solo hilo. Los tiempos
-individuales están en [resultados.json](graficas/saturacion_bodega/resultados.json).
+Esta ejecución usó Python 3.13.14 sobre Windows 11 y un solo hilo,
+al igual que el registro vigente del cargue. El procesamiento conjunto
+de las 40 categorías se cronometró una vez por estrategia; sus tiempos
+no son medias de cinco repeticiones.
 
 ![Saturación: tiempo frente a n](graficas/saturacion_bodega/tiempo_vs_n.png)
 
@@ -780,19 +687,20 @@ La exhaustiva solo se mide hasta 4000 horas; a 36.000 horas haría unos
 | 18000 | — | 0,029016 | 0,001037 |
 | 36000 | no se ejecuta | 0,060190 | 0,002099 |
 
-Al duplicar $n$, la exhaustiva multiplica el tiempo por 3,0 a 4,2 (en
+Al duplicar $n$, la exhaustiva multiplica el tiempo por 2,9 a 4,2 (en
 promedio cerca de 4, lo esperado para $\Theta(n^2)$; los tamaños pequeños
-tienen más ruido). Dividir y vencer lo multiplica por 1,9 a 2,2 en los
+tienen más ruido). Dividir y vencer lo multiplica por 1,9 a 2,3 en los
 últimos tres duplicados y Kadane por 1,9 a 2,1, coherente con $\Theta(n\log n)$
 y $\Theta(n)$. Estas son relaciones observadas, no una demostración de las
 cotas.
 
-**Volumen real.** Con las 40 categorías de 36.000 horas, medidas de verdad:
+**Volumen del caso.** Ejecución sobre datos sintéticos de 40 categorías
+con 36.000 horas cada una:
 
 | Estrategia | Tiempo de las 40 categorías | Energía por ejecución (kWh) |
 |---|---:|---:|
 | Dividir y vencer | 2,484 s | $1{,}035\times10^{-4}$ |
-| Kadane | 0,088 s | $3{,}67\times10^{-6}$ |
+| Kadane | 0,088 s | $3{,}68\times10^{-6}$ |
 | Exhaustiva (extrapolada) | ≈ 1338 s (≈ 22,3 min) | ≈ 0,0558 |
 
 Las dos estrategias rápidas devolvieron la misma suma en las 40 categorías.
@@ -802,9 +710,19 @@ exhaustiva en Python tardaría minutos, no el día completo que informa el
 cliente: la diferencia puede deberse a la máquina, al lenguaje, a que el
 proceso actual incluye otras tareas o a que lo informado es aproximado, y
 las mediciones no permiten decidir cuál. Lo que sí muestran es el orden de
-las alternativas: Kadane es unas 16 veces más rápido que dividir y vencer y
-unas 10.000 veces más rápido que la exhaustiva en este volumen. La energía
+las alternativas: el tiempo de dividir y vencer es 28,13 veces el de Kadane; la
+extrapolación de exhaustiva es aproximadamente 15.149 veces el tiempo
+medido de Kadane. Esta última razón combina una estimación y una medición. La energía
 se calcula con $0{,}15\cdot t/3600$ y 150 W; es una estimación de cómputo.
+
+El proceso histórico actual tarda **más de 24 horas**, según el cliente:
+a 150 W implica más de 3,6 kWh por ejecución bajo carga constante. No debe
+confundirse con la exhaustiva optimizada que aquí se extrapola a 0,0558 kWh.
+Si el histórico se analiza $f$ veces al año, la energía anual estimada de
+Kadane es $f\cdot3{,}67987\times10^{-6}$ kWh y la línea base supera
+$3{,}6f$ kWh. La frecuencia no fue suministrada: no se supone que esta tarea
+se ejecute los 300 días ni se suma automáticamente a la planeación diaria.
+La comparación con el cliente es contextual; no es un ahorro medido en su equipo.
 
 ---
 
@@ -893,7 +811,7 @@ despacho, sin confundir la prioridad sanitaria con maximizar el valor.
 
 ### 5.6. Comparación integral de las operaciones
 
-| Operación | Propiedad que explota | Estrategia | Costo antes → después | Estado de la evidencia |
+| Operación | Propiedad que explota | Estrategia | Costo de referencia → propuesta | Estado de la evidencia |
 |---|---|---|---|---|
 | 1. Consulta de inventario | Búsqueda por clave y por rango | Índice hash por código; índice ordenado por vencimiento | $\Theta(N)$ → $O(1)$ esperado por código y $O(\log N+k)$ por rango | Propuesta de diseño; sin código ni tiempos |
 | 2. Ordenamiento FEFO | Prefijo ya ordenado y pocas incorporaciones | Ordenar lo nuevo y fusionar | $O(Nm+m^2+N)$ → $O(m\log m+N+m)$ | Propuesta de diseño; sin código ni tiempos |
@@ -906,12 +824,15 @@ voraces del cargue no lo garantizan. **Costo:** el cargue paga más cómputo
 que la regla actual, pero cabe con holgura en la ventana; en saturación la
 mejora es de varios órdenes de magnitud. **Riesgo:** la programación dinámica
 depende de la unidad de capacidad ($W$ pseudopolinomial) y de memoria
-$\Theta(nW)$; Kadane y dividir y vencer no dependen de ningún parámetro
-numérico, solo de $n$.
+$\Theta(nW)$; Kadane y dividir y vencer dependen de $n$ bajo el modelo de
+aritmética de costo constante; con enteros arbitrariamente grandes también
+influye el costo de operar sobre sus bits.
 
 Las dos operaciones implementadas se parecen en algo: en ambas la
-exhaustiva sirve de oráculo para verificar casos pequeños y es inviable
-a escala real. Se diferencian en la ganancia: en el cargue se paga tiempo
+exhaustiva sirve de oráculo para verificar casos pequeños. En cargue su
+costo exponencial es inviable; en saturación su costo cuadrático es mucho
+mayor que el de las alternativas, aunque la extrapolación de §4.6
+estima unos 22,3 minutos para las 40 categorías. Se diferencian en la ganancia: en el cargue se paga tiempo
 para ganar calidad, y en la saturación se gana tiempo sin perder calidad.
 Para las operaciones 1 y 2 no hay datos que permitan clasificarlas con la
 misma evidencia.
@@ -931,12 +852,12 @@ $$E_{\text{día}}\;(\mathrm{kWh})=0{,}15\cdot\frac{14t_{\text{vehículo}}}{3600}
 
 | Estrategia | Energía estimada por día (kWh) | Proyección de 300 días (kWh) |
 |---|---:|---:|
-| DP | 0,000085457 | 0,025637172 |
-| Exhaustiva | 1,103768e+173 | 3,311304e+175 |
-| Vencimiento | 0,000000230 | 0,000069020 |
-| Densidad | 0,000001294 | 0,000388216 |
+| DP | 0,000106617 | 0,031985036 |
+| Exhaustiva | 2.246609e+173 | 6.739826e+175 |
+| Vencimiento | 0,000000236 | 0,000070823 |
+| Densidad | 0,000001223 | 0,000366881 |
 
-La diferencia anual **DP menos vencimiento** es **0,025568152 kWh**.
+La diferencia anual **DP menos vencimiento** es **0,031914213 kWh**.
 Es positiva: DP exige más energía de cómputo que la regla actual bajo este
 modelo, a cambio de obtener el óptimo. No se afirma un ahorro eléctrico
 frente a vencimiento. Frente a exhaustiva, DP evita un costo impracticable.
@@ -996,92 +917,61 @@ En los dos contraejemplos, la exhaustiva y DP alcanzan el mismo valor óptimo. V
 
 ### 7.2. Conclusiones integrales del proyecto
 
-1. **El problema está en los algoritmos y no en el equipo.** En tres de las
-   cuatro operaciones el trabajo crece más rápido de lo necesario. La
-   consulta de inventario recorre la lista completa, $\Theta(N)$ por consulta,
-   y las 30.000 consultas por código equivalen a unos 6.600 millones de
-   inspecciones diarias (§1.2). El ordenamiento por inserción puede llegar a
-   costo cuadrático. El análisis de saturación examina
-   648.018.000 tramos por categoría. Cambiar la estrategia reduce el orden
-   de crecimiento; un equipo más rápido solo cambiaría la constante.
+1. **Selección de estrategias.** Se recomienda programación dinámica para
+   el cargue y Kadane para saturación. La primera garantiza el valor
+   nutricional máximo en $\Theta(nW)$; la segunda conserva la exactitud en
+   $\Theta(n)$ con memoria constante. Dividir y vencer ofrece otra solución
+   exacta en $\Theta(n\log n)$ y permite contrastar el resultado. En las
+   operaciones 1 y 2 se proponen índices por código y fecha, y ordenar las
+   incorporaciones antes de fusionarlas. Estas propuestas reducen el
+   crecimiento teórico, pero requieren implementación y medición.
 
-2. **La estrategia correcta depende de la propiedad que tiene el problema.**
-   En el cargue, la restricción de lotes indivisibles y de valor máximo
-   exacto descarta las reglas voraces: los dos contraejemplos muestran que
-   vencimiento pierde 1570 unidades y densidad 450 frente al óptimo, y por
-   eso se usa programación dinámica, con costo $\Theta(nW)$. En la
-   saturación, el tramo óptimo se puede ensamblar a partir de óptimos
-   parciales, lo que permite dividir y vencer en $\Theta(n\log n)$ y, aún
-   mejor, Kadane en $\Theta(n)$. En la consulta de inventario hace falta
-   una estructura distinta según la pregunta: el índice hash responde por
-   código y no sirve para rangos, y un índice ordenado responde por rango.
-   Ninguna técnica es la mejor en todos los casos.
+2. **Corrección y evidencia.** Pasan los 12 grupos de pruebas de cargue y
+   los 13 de saturación. En esta última coinciden las tres estrategias en
+   200 series aleatorias y cinco series de 600 horas; solo las rápidas se
+   contrastan con el oráculo en 36.000 horas. Los contraejemplos descartan
+   la optimalidad general de las reglas de cargue: vencimiento pierde
+   1570 unidades y densidad 450. Las mediciones sintéticas respaldan los
+   contrastes de crecimiento, sin demostrar tiempos garantizados en el banco.
 
-3. **Dividir no siempre es lo más eficiente.** Dividir y vencer reduce
-   $\Theta(n^2)$ a $\Theta(n\log n)$, pero Kadane, que aprovecha que un
-   acumulado negativo nunca ayuda, lo reduce a $\Theta(n)$ con memoria
-   constante. Se comparan ambas, y se propone Kadane. Dividir y vencer queda
-   como verificación cruzada, ya que llega a la misma suma por otro camino.
+3. **Tiempo y energía.** El modelo vigente estima 2,558803 s y 0,031985036 kWh
+   anuales para el cargue DP de 14 vehículos; consume más que vencimiento,
+   a cambio de garantizar el óptimo. En saturación, Kadane procesa las
+   40 categorías en 0,088317 s frente a 2,484435 s de dividir y vencer;
+   la exhaustiva se extrapola a 1338 s. La línea base de planeación es
+   202,5 kWh anuales bajo 150 W constantes. Llegar a 90 kWh exige cumplir
+   las dos horas con las operaciones 1–3 completas, algo todavía no
+   verificado. La frecuencia anual del análisis histórico no está definida.
 
-4. **La corrección se verificó con oráculos independientes.** La suite de
-   saturación contrasta las tres estrategias con dos oráculos en casos
-   límite, 200 series aleatorias y series del tamaño real de 36.000 horas por
-   categoría; en todos coinciden las sumas. La suite del cargue contrasta la
-   programación dinámica con la exhaustiva en 40 instancias pequeñas y con
-   las reglas voraces en rutas del tamaño real.
+4. **Personas y sostenibilidad.** Maximizar el valor no garantiza cobertura
+   equitativa. Deben vigilarse las exclusiones de organizaciones, descartar
+   vencidos, conservar los registros y proteger los datos de menores (§6).
+   Los mínimos de cobertura requieren reformular y validar el modelo.
+   El factor de 2,5 kg de CO₂ equivalente por kg desechado solo permite
+   estimar emisiones evitadas cuando se mida la reducción real del desperdicio.
 
-5. **La ventaja del cargue es la calidad, no la energía.** Bajo el modelo de
-   §4.3, la programación dinámica tarda unos 2,05 s en los 14 vehículos, muy
-   por debajo de la ventana de dos horas, y consume del orden de
-   0,0256 kWh al año (§6.1). Eso es más que la regla por vencimiento
-   (≈ 0,00007 kWh al año), de modo que no se afirma un ahorro eléctrico.
-   Lo que aporta es el valor nutricional máximo con la capacidad dada. El
-   consumo de cómputo, en cualquier caso, es pequeño frente a lo que está en
-   juego: según el caso, cada kilogramo de alimento desechado equivale a
-   2,5 kg de CO₂ equivalente, y las pruebas sintéticas no permiten cuantificar
-   cuántos kilogramos se evitarían.
-
-6. **Efectos sobre las personas.** Optimizar el valor total puede dejar sin
-   atención a una organización cuyos lotes aportan poco valor, como un
-   jardín infantil. Se recomienda ponderar por prioridad o fijar cupos
-   mínimos, y vigilar las exclusiones persistentes (§6.2 y §6.3). Antes de
-   cualquier optimización hay que excluir los lotes vencidos, y dentro de
-   cada categoría debe despacharse primero el que vence primero. Ninguna
-   estrategia modifica los registros originales, lo que apoya la
-   trazabilidad ante un retiro de producto.
-
-7. **Crecimiento.** Con una segunda bodega, el cargue duplica su costo al
-   duplicarse los vehículos (§6.2). En saturación, si cada bodega conserva
-   sus propias series, se duplica el número de series y el trabajo se
-   duplica en las tres estrategias. Si, en cambio, se duplicara la longitud de cada
-   serie, Kadane duplicaría su trabajo, dividir y vencer lo haría un poco más
-   que el doble y la exhaustiva lo cuadruplicaría. Las operaciones 1 y 2 se
-   mantienen como propuesta y habría que revisarlas con el inventario
-   duplicado.
-
-8. **Límites.** Los datos son sintéticos y las mediciones se hicieron en una
-   sola máquina; las energías son estimaciones de cómputo, sin medición
-   eléctrica directa. Las operaciones 1 y 2 son propuestas de diseño sin
-   implementación ni tiempos medidos. Los tiempos de saturación (§4.6) se
-   tomaron en otra máquina que los del cargue, y la exhaustiva a 36.000 horas
-   se extrapola, no se ejecuta. La línea base energética del proceso completo
-   (§4.5) supone 150 W constantes. El tiempo del cargue no certifica que
-   el proceso completo quepa en la ventana (§4.4). La capacidad del cuarto
-   frío no se deduce solo del tramo de mayor crecimiento: hacen falta el
-   inventario inicial y las condiciones de almacenamiento de cada producto.
-
-**Recomendación.** Programación dinámica para el cargue de vehículos y Kadane
-para el tramo de saturación, ambas implementadas y verificadas. Para la
-consulta de inventario, un índice hash por código y un índice ordenado por
-fecha de vencimiento; para FEFO, ordenar las incorporaciones y fusionarlas
-con el inventario ya ordenado. Estas dos últimas deben implementarse y
-medirse antes de adoptarlas.
+5. **Crecimiento y límites.** Duplicar los vehículos duplica el trabajo de
+   cargue si se conservan candidatos y capacidad por ruta; si también se
+   duplican los candidatos, DP requiere aproximadamente cuatro veces el
+   trabajo de la flota original. En saturación, duplicar las series duplica
+   el trabajo; duplicar su longitud lo multiplica por dos en Kadane, algo
+   más de dos en dividir y vencer y cuatro en exhaustiva. Con inventario
+   duplicado, los índices ocupan aproximadamente el doble de memoria; el
+   hash conserva búsqueda esperada constante y la búsqueda ordenada sigue
+   siendo logarítmica más la salida. Duplicar también las incorporaciones
+   favorece ordenar y fusionar frente al término cuadrático de inserción.
+   Los registros vigentes usan Python 3.13.14 en Windows 11; las pruebas
+   finales usan Python 3.14.7 en WSL. Las energías son estimaciones, no
+   mediciones eléctricas. Dimensionar el cuarto frío requiere además
+   inventario inicial y condiciones de conservación.
 
 ---
 
 ## 8. Instrucciones de reproducción
 
-Desde la raíz del repositorio, con el entorno `.venvAnalisis` activado. Se utilizó Python 3.14.7 y las dependencias de [requirements.txt](requirements.txt).
+Desde la raíz del repositorio, con el entorno `.venvAnalisis` activado. Las pruebas finales se ejecutaron con Python 3.14.7 en WSL Ubuntu;
+las mediciones publicadas corresponden a Python 3.13.14 en Windows 11.
+Las dependencias de los algoritmos están en [requirements.txt](requirements.txt).
 
 ```bash
 # Suite consolidada: datos, casos límite, contraste con la exhaustiva
@@ -1137,23 +1027,201 @@ python -B src/cargue_vehiculos/medicion.py --solo-graficas
 
 ### 8.1. Exportación del informe a PDF
 
-Con [Pandoc](https://pandoc.org/) y un motor LaTeX con soporte Unicode
-(XeLaTeX), desde la raíz del repositorio, para que las rutas relativas de
-las imágenes se resuelvan:
+El [informe.pdf](informe.pdf) contiene este README completo, incluidos los
+anexos. Con las dependencias de exportación instaladas según el
+[anexo C](#anexo-c-reproducción-del-pdf), ejecutar:
 
 ```bash
-pandoc README.md -o informe.pdf \
-  --pdf-engine=xelatex \
-  --toc --number-sections=false \
-  -V lang=es -V geometry:margin=2.5cm \
-  -V mainfont="DejaVu Serif" -V monofont="DejaVu Sans Mono"
+python -B scripts/generar_pdf.py
 ```
 
-Las fórmulas con `$...$` y las tablas se convierten sin pasos adicionales.
-Si se trabaja en WSL Ubuntu, la instalación es
-`sudo apt install pandoc texlive-xetex texlive-lang-spanish fonts-dejavu`.
-Si no se desea instalar LaTeX, otra opción es abrir el informe en un
-visor de Markdown con soporte de fórmulas e imprimirlo como PDF. Después de
-exportar, hay que revisar que las tablas anchas no se corten, que las tres
-gráficas del cargue y la de saturación aparezcan, y que los símbolos
-(por ejemplo $\Theta$ y el subíndice de CO₂) se vean bien.
+Después de modificar el README se debe regenerar el PDF y comprobar su
+contenido, sus enlaces y la legibilidad de tablas, fórmulas y gráficas.
+
+---
+
+## Anexo A. Datos sintéticos y matriz de pruebas
+
+Las siguientes especificaciones complementan la implementación descrita
+en el apartado 3. Se conservan para reproducir y revisar los experimentos.
+
+### A.1. Generación de datos del cargue
+
+[datos.py](src/cargue_vehiculos/datos.py) genera lotes con la estructura entregada por el cliente. Cada lote es un `RegistroLote` inmutable (`dataclass(frozen=True)`) con `codigo_lote`, `categoria`, `fecha_vencimiento`, `peso_kg`, `raciones` y `donante`; intentar modificarlo lanza `FrozenInstanceError`, lo que protege la trazabilidad sanitaria del registro original.
+
+| Parámetro | Valor sintético | Fuente |
+|---|---|---|
+| Lotes candidatos por ruta | 300 a 600 | Enunciado del caso |
+| Capacidad del vehículo | 2.500 a 4.000 kg | Enunciado del caso |
+| Peso por lote | 20 a 600 kg, entero | Supuesto del equipo, igual al de `medicion.py` |
+| Raciones | 2 a 4 por kg | Supuesto del equipo |
+| Categorías | 40: 12 de proteína, 10 de frutas y verduras, 18 de otros | Caso: 40 categorías y grupos de prioridad; reparto 12/10/18 supuesto por el equipo |
+| Prioridad de la categoría | proteína 3, frutas y verduras 2, otros 1 | Supuesto del equipo |
+| Vencimiento | 0 a 30 días tras el despacho; el inventario puede incluir lotes vencidos hasta hace 5 días | Supuesto del equipo |
+
+El valor nutricional es `raciones × prioridad`, de modo que cada kilogramo aporta entre 2 y 12 unidades, el mismo rango que usa `medicion.py`. Las funciones públicas son:
+
+| Función | Uso |
+|---|---|
+| `generar_inventario(n, semilla, fecha_despacho, incluir_vencidos)` | Inventario de `n` lotes con códigos únicos; puede incluir lotes vencidos para probar su exclusión. |
+| `generar_ruta(semilla, n)` | Candidatos aptos de una ruta y capacidad del vehículo, en los rangos del caso. |
+| `generar_instancia_pequena(n, semilla)` | Instancias pequeñas (1–16 lotes en las pruebas), con límites de capacidad del 30 % y 70 % del peso total redondeados hacia abajo, para contrastar con la exhaustiva. |
+| `filtrar_aptos(lotes, fecha_despacho)` | Lista nueva sin los lotes vencidos; no modifica la entrada. |
+| `a_tuplas(lotes, fecha_despacho)` | Convierte a `Lote = (peso_kg, valor_nutricional, dias_para_vencer)` para `exhaustivo.py` y `regla_actual.py`. |
+| `a_listas(lotes)` | Separa pesos y valores para `mochila_01`, conservando los índices. |
+
+Cada generador usa su propio `random.Random(semilla)`: la misma semilla reproduce exactamente los mismos datos y no altera el estado global de `random`. La semilla base es `SEMILLA_BASE = 2026` y la fecha de despacho de referencia es el 18 de noviembre de 2026.
+
+### A.2. Matriz de pruebas del cargue
+
+| Prueba | Qué verifica |
+|---|---|
+| `probar_reproducibilidad` | Misma semilla, mismos datos; semilla distinta, datos distintos. |
+| `probar_rangos_del_caso` | Pesos, categorías y códigos únicos en 2.000 lotes; 300 a 600 candidatos y 2.500 a 4.000 kg en 20 rutas, y que los candidatos no quepan todos en el vehículo. |
+| `probar_registros_inmutables` | El registro original no puede modificarse. |
+| `probar_filtrado_de_vencidos` | Filtra sin modificar el inventario y verifica selecciones aptas: DP y reglas sobre el conjunto filtrado; exhaustiva sobre ocho candidatos. |
+| `probar_adaptadores` | `a_tuplas` y `a_listas` conservan el orden y la correspondencia de índices. |
+| `probar_casos_limite` | 14 casos con valor óptimo conocido, para los cuatro algoritmos: sin lotes, capacidad cero, nada cabe, todo cabe, ajuste exacto, un kilogramo de menos, capacidad igual al peso total y uno menos, valores cero, pesos iguales, empate de valor, lote de 1 kg, lote más pesado que el vehículo y lote que vence el día del despacho. |
+| `probar_ejemplo_manual` | Todas las celdas del ejemplo de cuatro lotes y óptimo 14, índices `[0, 3]`. |
+| `probar_desempates` | Estabilidad por fecha y densidad; comportamiento de DP y exhaustiva entre óptimos. |
+| `probar_excepciones` | Capacidad negativa, peso no positivo, valor negativo, números no enteros, booleanos y tuplas mal formadas lanzan `ValueError` en las cuatro interfaces. |
+| `probar_aleatorias_contra_exhaustiva` | 40 instancias aleatorias (el mínimo exigido es 20) de 1 a 16 lotes, con semillas 1000 a 1039: la DP alcanza el mismo valor que `cargar_exhaustivo` y ninguna regla voraz lo supera. |
+| `probar_rutas_tamano_real` | 3 rutas de tamaño real: cargues válidos y DP con valor mayor o igual al de ambas reglas. La exhaustiva no se ejecuta a este tamaño ($2^{300}$ subconjuntos o más). |
+| `ejecutar_suites_previas` | Ejecuta todas las pruebas de `pruebas_mochila.py` y `pruebas_contraejemplos.py`, sin imprimir sus tablas. |
+
+### A.3. Generación de datos de saturación
+
+[datos.py](src/saturacion_bodega/datos.py) genera series horarias con la estructura del caso. Con los valores por defecto produce el volumen real: 40 categorías × 36.000 horas (12 horas diarias, 300 días al año, 10 años). Cada hora es un `RegistroHorario` inmutable con `categoria`, `dia`, `hora` y `cambio_kg`.
+
+Las cifras del modelo son supuestos del equipo. Buscan que la serie tenga un tramo de saturación con sentido para el negocio:
+
+| Componente | Valor | Propósito |
+|---|---|---|
+| Escala de la categoría | 20 a 200 kg por hora | Categorías pequeñas y grandes |
+| Patrón diario | Entradas en la mañana y salidas en la tarde; promedio cero | Movimiento normal de la bodega |
+| Temporada alta | Últimos 50 días operativos de cada año, +40 % de la escala por hora | Saturación de fin de año que debe detectarse |
+| Fuera de temporada | −20 % de la escala por hora | Saldo anual negativo: el inventario no crece sin límite |
+| Ruido | Gaussiano, desviación del 50 % de la escala | Variación horaria |
+| Eventos | Donación grande (1 %, +2 a 6 veces la escala) y descarte (0,5 %, −2 a 4 veces la escala) | Picos aislados |
+
+Con este modelo el saldo de diez años es negativo y el tramo máximo dura una temporada. Según el oráculo de la suite, con las semillas 0 a 7 dura entre 594 y 641 horas y siempre empieza entre los días 249 y 251 del año. Así el resultado no es trivial: no coincide con toda la serie ni con una sola hora.
+
+| Función | Uso |
+|---|---|
+| `generar_serie(n, semilla)` | Serie de `n` horas de una categoría |
+| `generar_historico(horas, categorias, semilla)` | Una serie por categoría; la categoría k usa la semilla `semilla + k` |
+| `generar_registros(categoria, n, semilla)` | Registros originales inmutables |
+| `generar_serie_pequena(n, semilla, rango_kg)` | Valores uniformes en ±`rango_kg`, para contrastar con la exhaustiva; con rangos pequeños aparecen empates y ceros |
+| `a_serie(registros)` | Extrae los cambios sin modificar los registros |
+| `describir_hora(indice)` | Convierte un índice en texto, por ejemplo "año 9, día 250, 06:00", para reportar el tramo |
+
+Cada generador usa su propio `random.Random(semilla)`, con semilla base `SEMILLA_BASE = 2026`.
+
+### A.4. Matriz de pruebas de saturación
+
+| Prueba | Qué verifica |
+|---|---|
+| `probar_reproducibilidad`, `probar_volumen_del_caso` | Misma semilla, misma serie. Volumen real de 40 × 36.000 y una serie distinta por categoría. |
+| `probar_forma_de_la_serie` | Series de 36.000 horas con valores enteros y de ambos signos, y saldo negativo. El tramo máximo dura más de un día, menos de un año y empieza en temporada. |
+| `probar_registros_y_adaptadores`, `probar_describir_hora` | Registros inmutables y en orden, y conversión de índices a fechas. |
+| `probar_oraculos` | Los dos oráculos coinciden en 300 series. |
+| `probar_casos_limite` | 16 casos con resultado conocido: una hora (positiva, negativa o cero), todas negativas, todas positivas, máximo al inicio o al final, tramo en la mitad izquierda, en la derecha y cruzando la mitad, pico aislado, el ejemplo de CLRS (43, horas 7 a 10) y tres casos de empate. |
+| `probar_ejemplo_manual` | El ejemplo para resolver a mano da exactamente `(11, 2, 5)`. |
+| `probar_serie_vacia` | Las tres estrategias lanzan `ValueError`. |
+| `probar_no_modifica_entrada` | Ninguna estrategia altera la serie. |
+| `probar_aleatorias_contra_oraculo` | 200 series de 1 a 64 horas (el mínimo exigido es 20), con rangos de ±2 a ±500 kg y semillas 4000 a 4199. |
+| `probar_series_del_modelo` | 5 series del modelo de 600 horas, incluida la exhaustiva. |
+| `probar_volumen_real` | 3 categorías de 36.000 horas con dividir y vencer y Kadane. La exhaustiva no se ejecuta: serían unos $6{,}5 \times 10^8$ tramos por categoría. |
+
+### A.5. Interfaces del cargue
+
+| Módulo | Funciones y particularidades |
+|---|---|
+| [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) | `cargar_exhaustivo(lotes, capacidad_kg)`: enumera por cantidad de lotes y luego por orden lexicográfico de índices. Entre óptimos empatados conserva el de menos lotes y, después, el menor orden lexicográfico. No almacena todos los subconjuntos. |
+| [regla_actual.py](src/cargue_vehiculos/regla_actual.py) | `cargar_por_vencimiento(lotes, capacidad_kg)` y `cargar_por_densidad(lotes, capacidad_kg)`: conservan el orden de entrada en empates. La segunda compara razones exactamente con `Fraction`. |
+| [estrategia.py](src/cargue_vehiculos/estrategia.py) | `cargar_vehiculo(lotes, capacidad_kg)`: valida las tuplas y adapta peso y valor a `mochila_01`, conservando la implementación y los índices. En empates, DP conserva la opción sin el lote evaluado; puede devolver otro óptimo que la exhaustiva. |
+
+---
+
+## Anexo B. Pseudocódigo completo de saturación
+
+```
+TRAMO-MAXIMO-DIVIDIR(cambios):
+    si cambios está vacío: lanzar ValueError
+    devolver DIVIDIR(cambios, 0, n - 1)
+
+DIVIDIR(cambios, inicio, fin):
+    si inicio = fin:                                  // caso base: una hora
+        devolver (cambios[inicio], inicio, fin)
+    medio ← (inicio + fin) // 2                       // dividir
+    izq ← DIVIDIR(cambios, inicio, medio)             // conquistar
+    der ← DIVIDIR(cambios, medio + 1, fin)
+    cruz ← CRUZADO(cambios, inicio, medio, fin)       // combinar
+    devolver el de mayor suma entre izq, der y cruz
+
+CRUZADO(cambios, inicio, medio, fin):
+    suma ← 0; mejor_izq ← cambios[medio]; ini ← medio
+    para hora desde medio hasta inicio, bajando de uno en uno:
+        suma ← suma + cambios[hora]
+        si suma > mejor_izq: mejor_izq ← suma; ini ← hora
+    suma ← 0; mejor_der ← cambios[medio + 1]; fin_tramo ← medio + 1
+    para hora desde medio + 1 hasta fin:
+        suma ← suma + cambios[hora]
+        si suma > mejor_der: mejor_der ← suma; fin_tramo ← hora
+    devolver (mejor_izq + mejor_der, ini, fin_tramo)
+```
+
+Kadane se apoya en una recurrencia sobre el mejor tramo que *termina* en la
+hora $i$, que llamamos $E[i]$:
+
+$$E[0] = c_0, \qquad E[i] = \max(c_i,\; E[i-1] + c_i), \qquad
+\text{respuesta} = \max_i E[i].$$
+
+Si $E[i-1]$ es negativo, arrastrarlo solo resta, y el tramo empieza de nuevo
+en la hora $i$. Como $E[i]$ solo depende de $E[i-1]$, basta una variable en
+lugar de un arreglo.
+
+```
+TRAMO-MAXIMO-KADANE(cambios):
+    si cambios está vacío: lanzar ValueError
+    mejor ← actual ← cambios[0]
+    inicio_actual ← 0; (mejor_ini, mejor_fin) ← (0, 0)
+    para hora desde 1 hasta n - 1:
+        si actual < 0:                       // el pasado resta: reiniciar
+            actual ← cambios[hora]; inicio_actual ← hora
+        si no:
+            actual ← actual + cambios[hora]
+        si actual > mejor:
+            mejor ← actual; (mejor_ini, mejor_fin) ← (inicio_actual, hora)
+    devolver (mejor, mejor_ini, mejor_fin)
+```
+
+## Anexo C. Reproducción del PDF
+
+El [PDF del informe](informe.pdf) se genera directamente desde este README,
+incluidos sus anexos. El exportador conserva el orden, convierte las
+fórmulas a gráficos vectoriales e incorpora las cuatro imágenes publicadas;
+no ejecuta mediciones. Los enlaces al código apuntan al repositorio en GitHub.
+
+Desde WSL Ubuntu, con `.venvAnalisis` activado y Node.js disponible:
+
+```bash
+# Dependencias de exportación, separadas de las de los algoritmos
+python -m pip install -r scripts/requirements-pdf.txt
+npm install --prefix .venvAnalisis/pdf-node mathjax-full@3.2.2
+
+# Generar informe.pdf desde el README vigente
+python -B scripts/generar_pdf.py
+```
+
+El script usa Pandoc, MathJax y WeasyPrint; requiere las bibliotecas de
+Pango y Fontconfig del sistema y las fuentes DejaVu. En Ubuntu, si faltan,
+se instalan con `sudo apt install libpango-1.0-0 libpangoft2-1.0-0 fonts-dejavu-core`.
+No necesita LaTeX. Las versiones de las dependencias de Python están fijadas
+en [requirements-pdf.txt](scripts/requirements-pdf.txt).
+
+La exportación imprime la huella SHA-256 del README, también incorporada
+en los metadatos del PDF. Después de cualquier cambio al informe debe
+regenerarse el archivo y verificarse que tablas, fórmulas, imágenes y
+referencias sean legibles. Los detalles de generación y pruebas se
+conservan en el anexo para concentrar el cuerpo en el análisis y los resultados.
