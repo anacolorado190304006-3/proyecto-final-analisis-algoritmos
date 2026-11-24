@@ -14,9 +14,9 @@
 [estrategia.py](src/cargue_vehiculos/estrategia.py) · [pruebas_mochila.py](src/cargue_vehiculos/pruebas_mochila.py) · [medicion.py](src/cargue_vehiculos/medicion.py) · [exhaustivo.py](src/cargue_vehiculos/exhaustivo.py) · [regla_actual.py](src/cargue_vehiculos/regla_actual.py) · [pruebas_contraejemplos.py](src/cargue_vehiculos/pruebas_contraejemplos.py) · [datos.py](src/cargue_vehiculos/datos.py) · [pruebas.py](src/cargue_vehiculos/pruebas.py)
 
 **Código fuente de la operación 4 en `src/saturacion_bodega/`:**  
-[datos.py](src/saturacion_bodega/datos.py) · [pruebas.py](src/saturacion_bodega/pruebas.py) · [exhaustivo.py](src/saturacion_bodega/exhaustivo.py)
+[estrategia.py](src/saturacion_bodega/estrategia.py) · [medicion.py](src/saturacion_bodega/medicion.py) · [datos.py](src/saturacion_bodega/datos.py) · [pruebas.py](src/saturacion_bodega/pruebas.py) · [exhaustivo.py](src/saturacion_bodega/exhaustivo.py)
 
-El Laboratorio 4 del 18 de noviembre de 2026 aborda la operación 3: cargue de vehículos. Los apartados pendientes del proyecto final se identifican para la entrega del 23 de noviembre.
+El Laboratorio 4 del 18 de noviembre de 2026 aborda la operación 3: cargue de vehículos. El informe se completa para la entrega del 23 de noviembre con las dos operaciones implementadas (cargue y saturación), la línea base energética, la comparación integral y las conclusiones.
 
 **Preparación del entorno**
 
@@ -76,7 +76,7 @@ distintos órdenes de crecimiento.
 | 1. Consulta de inventario | Lotes y código o rango de vencimiento; devuelve un lote o los que vencen en el rango. | Recorre la lista completa: $\Theta(N)$ por consulta. Las 30.000 consultas por código representan aproximadamente 6.600 millones de inspecciones diarias con $N=220.000$, sin contar las consultas por rango. | Índice hash por código: $O(1)$ esperado por consulta; índice ordenado por fecha: $O(\log N+k)$ por rango, con $k$ resultados. Ambos requieren $O(N)$ de almacenamiento adicional y mantenimiento. Propuesta de diseño, sin implementación ni tiempos medidos. |
 | 2. Ordenamiento FEFO | Lista previamente ordenada y nuevos lotes anexados; devuelve el orden por vencimiento y, en empate, categoría. | Inserción: $O((N+m)^2)$ en general. Al aprovechar el prefijo ya ordenado, el peor caso es $O(Nm+m^2+N)$ para $m$ incorporaciones, por los desplazamientos de los lotes nuevos. | Ordenar las incorporaciones y fusionarlas con el inventario: $O(m\log m+N+m)$ temporal y $O(N+m)$ auxiliar, sobre referencias para conservar los registros originales. Propuesta sin implementación experimental. |
 | 3. Cargue de vehículos | 300–600 candidatos por ruta y capacidad de 2.500–4.000 kg; devuelve lotes completos de valor nutricional máximo. | Vencimiento: ordena y se detiene en el primer lote que no cabe. Es rápido, pero no garantiza el óptimo; el 78 % de ocupación informado por el banco es una medida de peso, no de valor nutricional. | Programación dinámica, contrastada con exhaustiva y las dos reglas. El diseño, las pruebas y las mediciones se desarrollan en los apartados siguientes. |
-| 4. Saturación de bodega | Cambios netos horarios en kg por categoría; devuelve suma máxima e índices de un tramo consecutivo no vacío. | Examina todos los tramos: $n(n+1)/2$. Con sumas incrementales, $\Theta(n^2)$ temporal y $O(1)$ auxiliar. El cliente informa más de un día para procesar las 40 categorías. | Exhaustiva como referencia exacta; dividir y vencer y Kadane como alternativas previstas. La comparación debe verificar igualdad de la suma óptima, aunque los índices puedan diferir en empates. |
+| 4. Saturación de bodega | Cambios netos horarios en kg por categoría; devuelve suma máxima e índices de un tramo consecutivo no vacío. | Examina todos los tramos: $n(n+1)/2$. Con sumas incrementales, $\Theta(n^2)$ temporal y $O(1)$ auxiliar. El cliente informa más de un día para procesar las 40 categorías. | Exhaustiva como referencia exacta; dividir y vencer y Kadane como alternativas implementadas en [estrategia.py](src/saturacion_bodega/estrategia.py). La comparación debe verificar igualdad de la suma óptima, aunque los índices puedan diferir en empates. |
 
 En las dos primeras filas, $N$ es el inventario previo y $m$ las
 incorporaciones. En saturación, $n=36.000$ horas por categoría implica
@@ -170,7 +170,181 @@ Ambas reglas producen selecciones factibles, pero una decisión local puede excl
 
 ### 2.5. Estructuras de datos, diseño general y segunda operación crítica
 
-Pendiente para la entrega del 23 de noviembre
+#### 2.5.1. Diseño general
+
+Cada operación se asigna a la estrategia que su estructura admite. Las dos
+primeras se dejan como propuesta de diseño (§1.2); la tercera y la cuarta
+se implementan y se verifican.
+
+| Operación | Estrategia y estructura de datos | Alcance |
+|---|---|---|
+| 1. Consulta de inventario | Índice hash por código de lote; índice ordenado por fecha de vencimiento para los rangos. | Propuesta de diseño, sin implementación. |
+| 2. Ordenamiento FEFO | Ordenar las incorporaciones del día y fusionarlas con el inventario ya ordenado, sobre referencias a los registros originales. | Propuesta de diseño, sin implementación. |
+| 3. Cargue de vehículos | Programación dinámica (mochila 0/1) sobre dos listas de enteros y un arreglo de valores. | Implementada: §2.1 a §2.3. |
+| 4. Saturación de bodega | Dividir y vencer y Kadane sobre la serie horaria, contrastadas con la exhaustiva. | Implementada: §2.5.2 a §2.5.6. |
+
+La operación 4 no necesita una estructura auxiliar. La entrada es una lista
+de enteros (`list[int]`) que ninguna estrategia modifica, y la salida es una
+tupla `(suma, inicio, fin)`. Dividir y vencer usa solo la pila de recursión
+y Kadane usa unas pocas variables. Los registros horarios originales
+(`RegistroHorario`) permanecen inmutables y la estrategia trabaja sobre la
+serie extraída de ellos con `a_serie`.
+
+#### 2.5.2. Operación 4: por qué admite dividir y vencer
+
+Dada la serie `cambios[inicio..fin]`, el tramo óptimo, visto desde la mitad
+de la serie, cae en exactamente uno de tres casos:
+
+1. queda completo en la mitad izquierda,
+2. queda completo en la mitad derecha, o
+3. cruza el punto medio.
+
+Los casos 1 y 2 son el mismo problema con la mitad de las horas y son
+independientes entre sí, así que se resuelven con la misma función. El caso 3
+se resuelve sin recursión: un tramo que cruza el medio es la unión de un
+tramo que termina en `medio` y otro que empieza en `medio + 1`, y cada uno
+se optimiza por separado. Basta un barrido hacia la izquierda desde `medio`
+y otro hacia la derecha desde `medio + 1`, acumulando la suma y guardando la
+mejor de cada lado. Esa combinación cuesta $\Theta(n)$, mucho menos que
+examinar los $n(n+1)/2$ tramos de la exhaustiva.
+
+La condición que hace útil la división es que combinar sea barato frente al
+trabajo que se evita. Aquí lo es porque el mejor tramo cruzado se obtiene
+sumando dos óptimos parciales, sin probar pares de extremos.
+
+#### 2.5.3. Pseudocódigo
+
+```
+TRAMO-MAXIMO-DIVIDIR(cambios):
+    si cambios está vacío: lanzar ValueError
+    devolver DIVIDIR(cambios, 0, n - 1)
+
+DIVIDIR(cambios, inicio, fin):
+    si inicio = fin:                                  // caso base: una hora
+        devolver (cambios[inicio], inicio, fin)
+    medio ← (inicio + fin) // 2                       // dividir
+    izq ← DIVIDIR(cambios, inicio, medio)             // conquistar
+    der ← DIVIDIR(cambios, medio + 1, fin)
+    cruz ← CRUZADO(cambios, inicio, medio, fin)       // combinar
+    devolver el de mayor suma entre izq, der y cruz
+
+CRUZADO(cambios, inicio, medio, fin):
+    suma ← 0; mejor_izq ← cambios[medio]; ini ← medio
+    para hora desde medio hasta inicio, bajando de uno en uno:
+        suma ← suma + cambios[hora]
+        si suma > mejor_izq: mejor_izq ← suma; ini ← hora
+    suma ← 0; mejor_der ← cambios[medio + 1]; fin_tramo ← medio + 1
+    para hora desde medio + 1 hasta fin:
+        suma ← suma + cambios[hora]
+        si suma > mejor_der: mejor_der ← suma; fin_tramo ← hora
+    devolver (mejor_izq + mejor_der, ini, fin_tramo)
+```
+
+Kadane se apoya en una recurrencia sobre el mejor tramo que *termina* en la
+hora $i$, que llamamos $E[i]$:
+
+$$E[0] = c_0, \qquad E[i] = \max(c_i,\; E[i-1] + c_i), \qquad
+\text{respuesta} = \max_i E[i].$$
+
+Si $E[i-1]$ es negativo, arrastrarlo solo resta, y el tramo empieza de nuevo
+en la hora $i$. Como $E[i]$ solo depende de $E[i-1]$, basta una variable en
+lugar de un arreglo.
+
+```
+TRAMO-MAXIMO-KADANE(cambios):
+    si cambios está vacío: lanzar ValueError
+    mejor ← actual ← cambios[0]
+    inicio_actual ← 0; (mejor_ini, mejor_fin) ← (0, 0)
+    para hora desde 1 hasta n - 1:
+        si actual < 0:                       // el pasado resta: reiniciar
+            actual ← cambios[hora]; inicio_actual ← hora
+        si no:
+            actual ← actual + cambios[hora]
+        si actual > mejor:
+            mejor ← actual; (mejor_ini, mejor_fin) ← (inicio_actual, hora)
+    devolver (mejor, mejor_ini, mejor_fin)
+```
+
+#### 2.5.4. Ejemplo resuelto a mano
+
+Serie de 8 horas, en kg: `[3, -5, 4, -1, 2, 6, -9, 5]`.
+
+**Dividir y vencer.** Con $n = 8$, `medio` = 3. La mitad izquierda es
+`[3, -5, 4, -1]` y la derecha, `[2, 6, -9, 5]`.
+
+| Caso | Mejor tramo | Suma |
+|---|---|---:|
+| Izquierdo | hora 2 (`4`) | 4 |
+| Derecho | horas 4 a 5 (`2 + 6`) | 8 |
+| Cruzado | horas 2 a 5 | **11** |
+
+* Barrido izquierdo desde la hora 3: −1; luego 4 − 1 = **3** (hora 2); luego −2; luego 1. El mejor es 3 y llega hasta la hora 2.
+* Barrido derecho desde la hora 4: 2; luego 2 + 6 = **8** (hora 5); luego −1; luego 4. El mejor es 8 y llega hasta la hora 5.
+* Cruzado: 3 + 8 = 11. Supera a 4 y a 8, así que el óptimo cruza la mitad.
+
+**Kadane.** Se lleva `actual` (el mejor tramo que termina en la hora) y `mejor`.
+
+| Hora | Cambio | `actual` | `mejor` |
+|---:|---:|---:|---|
+| 0 | 3 | 3 | 3 (hora 0) |
+| 1 | −5 | −2 | 3 |
+| 2 | 4 | 4 (reinicia porque −2 < 0) | 4 (hora 2) |
+| 3 | −1 | 3 | 4 |
+| 4 | 2 | 5 | 5 (horas 2 a 4) |
+| 5 | 6 | 11 | **11 (horas 2 a 5)** |
+| 6 | −9 | 2 | 11 |
+| 7 | 5 | 7 | 11 |
+
+Ambas estrategias devuelven `(11, 2, 5)`: el tramo de las horas 2 a 5 con
+11 kg, igual que la exhaustiva. `probar_ejemplo_manual` lo comprueba para
+las tres.
+
+#### 2.5.5. Complejidad
+
+| Estrategia | Tiempo | Memoria adicional | Observación |
+|---|---|---|---|
+| Exhaustiva | $\Theta(n^2)$ | $O(1)$ | Visita $n(n+1)/2$ tramos con suma incremental. |
+| Dividir y vencer | $\Theta(n\log n)$ | $O(\log n)$ | Pila de recursión de profundidad $\lceil\log_2 n\rceil+1$; no copia sublistas. |
+| Kadane | $\Theta(n)$ | $O(1)$ | Un solo recorrido. |
+
+**Recurrencia de dividir y vencer.** El caso base cuesta $\Theta(1)$. Cada
+llamada hace dos llamadas sobre mitades de tamaño $n/2$ y un barrido cruzado
+que recorre las $n$ horas del rango, más una comparación constante:
+
+$$T(n) = 2\,T(n/2) + \Theta(n), \qquad T(1) = \Theta(1).$$
+
+Con $a = 2$, $b = 2$ y $f(n) = \Theta(n)$ se tiene $n^{\log_b a} = n$. Como
+$f(n) = \Theta(n^{\log_b a})$, se aplica el caso 2 del método maestro, que
+no exige condición de regularidad, y resulta $T(n) = \Theta(n\log n)$.
+
+**Conteo de operaciones con el volumen real.** Para $n = 36.000$ horas por
+categoría, la exhaustiva visita 648.018.000 tramos, es decir, 25.920.720.000
+para las 40 categorías (§1.2). Dividir y vencer hace del orden de
+$n\log_2 n \approx 5{,}4\times10^{5}$ sumas por categoría, y Kadane hace
+$36.000$. La exhaustiva hace entonces unas 18.000 veces más pasos que
+Kadane y unas 1.200 veces más que dividir y vencer. Son conteos del crecimiento
+del trabajo, no tiempos medidos.
+
+#### 2.5.6. Implementación y verificación
+
+[estrategia.py](src/saturacion_bodega/estrategia.py) define
+`tramo_maximo_dividir(cambios)` y `tramo_maximo_kadane(cambios)` con el
+contrato de §3.3.1: devuelven `(suma, inicio, fin)` con índices en base cero y
+`fin` incluido, reportan la hora menos negativa cuando todos los cambios son
+negativos, lanzan `ValueError` ante una serie vacía y no modifican la
+entrada. Dividir y vencer usa dos funciones auxiliares, `_tramo_cruzado` y
+`_tramo_dividir`. En empates, dividir y vencer prefiere el tramo izquierdo, luego
+el derecho y por último el cruzado; Kadane conserva el primero que
+alcanza la suma máxima. Los tramos pueden diferir, pero la suma es siempre la
+máxima, que es lo que exige la restricción del negocio.
+
+La suite [pruebas.py](src/saturacion_bodega/pruebas.py) las verifica contra
+dos oráculos independientes (§3.3.3).
+
+**Estrategia que se propone.** Kadane, por ser lineal, usar memoria constante
+y devolver la misma suma exacta que las demás. Dividir y vencer se conserva
+como segunda estrategia comparada y como verificación cruzada del resultado,
+porque llega a la misma suma por un camino distinto.
 
 ---
 
@@ -354,12 +528,13 @@ Los dos se contrastan entre sí en 300 series. A cada resultado se le aplica `ve
 
 Si una de las tres funciones aún no existe, la suite la marca como `[pendiente]` y termina con código de salida 1, aunque las pruebas de datos pasen. Así no se reporta una suite completa sin las estrategias.
 
-**Estado de la ejecución.** Pasan las 6 pruebas de datos y las 6 pruebas
-aplicables a la exhaustiva, incluidas 200 series aleatorias y 5 series del
-modelo de 600 horas. El ejemplo devuelve `(11, 2, 5)`. La suite imprime
-13 pruebas, pero `probar_volumen_real` todavía no contrasta estrategias:
-excluye la exhaustiva y faltan dividir y vencer y Kadane. Por esa ausencia
-termina con código 1; la validación integrada permanece pendiente.
+**Estado de la ejecución.** Con `estrategia.py`, la suite imprime 13 pruebas
+y termina con código 0: pasan las 6 pruebas de datos y las 6 pruebas de
+estrategias con las tres funciones (dividir y vencer, Kadane y exhaustiva),
+incluidas 200 series aleatorias y 5 series del modelo de 600 horas. El
+ejemplo devuelve `(11, 2, 5)` en las tres. En `probar_volumen_real`, dividir y
+vencer y Kadane coinciden con el oráculo por prefijos en 3 categorías de
+36.000 horas; la exhaustiva no se ejecuta a ese tamaño.
 
 ---
 
@@ -550,7 +725,87 @@ alistamiento. La energía y su diferencia anual se calculan en §6.1.
 
 ### 4.5. Línea base energética del proceso completo
 
-Pendiente para la entrega del 23 de noviembre
+El caso informa que el proceso actual de planeación tarda cerca de
+**4,5 horas** y que la meta es cerrarlo en dos. Para convertirlo en energía
+se usa el mismo modelo de §6.1: potencia de **150 W = 0,15 kW** mientras el
+equipo trabaja y **300 días operativos** al año. El supuesto es que el
+equipo mantiene esa potencia durante todo el proceso; el caso no entrega
+una medición eléctrica.
+
+$$E_{\text{día}}=P\cdot t,\qquad E_{\text{año}}=300\,E_{\text{día}}.$$
+
+| Escenario | Duración diaria | Energía por día (kWh) | Energía en 300 días (kWh) |
+|---|---:|---:|---:|
+| Proceso actual | 4,5 h | 0,675 | 202,5 |
+| Meta de planeación | 2,0 h | 0,300 | 90,0 |
+| Diferencia si se alcanza la meta | 2,5 h | 0,375 | 112,5 |
+
+Dentro de esa línea base, el cargue optimizado con programación dinámica
+representa unos 2,05 s diarios (§4.3), es decir, $8{,}5\times10^{-5}$ kWh
+por día (§6.1). Frente a 0,675 kWh diarios es una fracción del orden de
+$10^{-4}$. Por eso la energía del proceso completo no la determina el
+cargue: depende de las demás operaciones (consulta, FEFO y preparación de
+datos), cuyos tiempos no se midieron en este ejercicio. La diferencia de
+112,5 kWh al año es un escenario condicionado a que la meta de dos horas se
+cumpla, no un resultado demostrado. Sin medición eléctrica, estas cifras
+sirven para dimensionar el orden de magnitud y comparar escenarios, no como
+consumo facturable.
+
+### 4.6. Operación 4: mediciones de la saturación
+
+[medicion.py](src/saturacion_bodega/medicion.py) usa las series de
+[datos.py](src/saturacion_bodega/datos.py) con la semilla base y las tres
+estrategias. Antes de cronometrar comprueba que las sumas coincidan; luego
+mide la función completa con `time.perf_counter()`, tras una ejecución de
+calentamiento y con **cinco repeticiones**, y publica la media. Los tiempos
+individuales están en [resultados.json](graficas/saturacion_bodega/resultados.json).
+Esta ejecución usó Python 3.13 en Linux y un solo hilo; no es el mismo
+equipo que las mediciones del cargue, por lo que las tablas de §4.2 y §4.6
+no deben compararse entre sí en valor absoluto.
+
+![Saturación: tiempo frente a n](graficas/saturacion_bodega/tiempo_vs_n.png)
+
+La exhaustiva solo se mide hasta 4000 horas; a 36.000 horas haría unos
+648 millones de tramos por categoría.
+
+| $n$ (horas) | Exhaustiva (s) | Dividir y vencer (s) | Kadane (s) |
+|---:|---:|---:|---:|
+| 250 | 0,001119 | — | — |
+| 500 | 0,004683 | — | — |
+| 1000 | 0,025781 | 0,000846 | 0,000050 |
+| 2000 | 0,082849 | — | — |
+| 2250 | — | 0,002085 | 0,000117 |
+| 4000 | 0,338066 | — | — |
+| 4500 | — | 0,004667 | 0,000227 |
+| 9000 | — | 0,009324 | 0,000464 |
+| 18000 | — | 0,020251 | 0,000915 |
+| 36000 | no se ejecuta | 0,040259 | 0,001826 |
+
+Al duplicar $n$, la exhaustiva multiplica el tiempo por 3,2 a 5,5 (en
+promedio cerca de 4, lo esperado para $\Theta(n^2)$; los tamaños pequeños
+tienen más ruido). Dividir y vencer lo multiplica por 2,0 a 2,2 en los
+últimos tres duplicados y Kadane por 1,9 a 2,1, coherente con $\Theta(n\log n)$
+y $\Theta(n)$. Estas son relaciones observadas, no una demostración de las
+cotas.
+
+**Volumen real.** Con las 40 categorías de 36.000 horas, medidas de verdad:
+
+| Estrategia | Tiempo de las 40 categorías | Energía por ejecución (kWh) |
+|---|---:|---:|
+| Dividir y vencer | 1,693 s | $7{,}05\times10^{-5}$ |
+| Kadane | 0,103 s | $4{,}27\times10^{-6}$ |
+| Exhaustiva (extrapolada) | ≈ 1095 s (≈ 18 min) | ≈ 0,0456 |
+
+Las dos estrategias rápidas devolvieron la misma suma en las 40 categorías.
+La estimación de la exhaustiva escala el tiempo medido con 4000 horas por
+$(36000/4000)^2=81$ y multiplica por 40; no se ejecutó. Con estas cifras la
+exhaustiva en Python tardaría minutos, no el día completo que informa el
+cliente: la diferencia puede deberse a la máquina, al lenguaje, a que el
+proceso actual incluye otras tareas o a que lo informado es aproximado, y
+las mediciones no permiten decidir cuál. Lo que sí muestran es el orden de
+las alternativas: Kadane es unas 16 veces más rápido que dividir y vencer y
+unas 10.000 veces más rápido que la exhaustiva en este volumen. La energía
+se calcula con $0{,}15\cdot t/3600$ y 150 W; es una estimación de cómputo.
 
 ---
 
@@ -639,7 +894,28 @@ despacho, sin confundir la prioridad sanitaria con maximizar el valor.
 
 ### 5.6. Comparación integral de las operaciones
 
-Pendiente para la entrega del 23 de noviembre
+| Operación | Propiedad que explota | Estrategia | Costo antes → después | Estado de la evidencia |
+|---|---|---|---|---|
+| 1. Consulta de inventario | Búsqueda por clave y por rango | Índice hash por código; índice ordenado por vencimiento | $\Theta(N)$ → $O(1)$ esperado por código y $O(\log N+k)$ por rango | Propuesta de diseño; sin código ni tiempos |
+| 2. Ordenamiento FEFO | Prefijo ya ordenado y pocas incorporaciones | Ordenar lo nuevo y fusionar | $O(Nm+m^2+N)$ → $O(m\log m+N+m)$ | Propuesta de diseño; sin código ni tiempos |
+| 3. Cargue de vehículos | Subestructura óptima y subproblemas traslapados | Programación dinámica (mochila 0/1) | $\Theta(n2^n)$ exhaustiva → $\Theta(nW)$ | Implementada, verificada y medida (§4.2–4.4); reglas voraces refutadas (§5.1–5.2) |
+| 4. Saturación de bodega | Un tramo óptimo se arma con óptimos parciales | Dividir y vencer y Kadane | $\Theta(n^2)$ → $\Theta(n\log n)$ y $\Theta(n)$ | Implementada, verificada y medida (§3.3, §4.6) |
+
+Los criterios de la comparación son tres. **Garantía:** cargue y saturación
+devuelven el óptimo exacto y se contrastaron con la exhaustiva; las reglas
+voraces del cargue no lo garantizan. **Costo:** el cargue paga más cómputo
+que la regla actual, pero cabe con holgura en la ventana; en saturación la
+mejora es de varios órdenes de magnitud. **Riesgo:** la programación dinámica
+depende de la unidad de capacidad ($W$ pseudopolinomial) y de memoria
+$\Theta(nW)$; Kadane y dividir y vencer no dependen de ningún parámetro
+numérico, solo de $n$.
+
+Las dos operaciones implementadas se parecen en algo: en ambas la
+exhaustiva sirve de oráculo para verificar casos pequeños y es inviable
+a escala real. Se diferencian en la ganancia: en el cargue se paga tiempo
+para ganar calidad, y en la saturación se gana tiempo sin perder calidad.
+Para las operaciones 1 y 2 no hay datos que permitan clasificarlas con la
+misma evidencia.
 
 ---
 
@@ -721,7 +997,86 @@ En los dos contraejemplos, la exhaustiva y DP alcanzan el mismo valor óptimo. V
 
 ### 7.2. Conclusiones integrales del proyecto
 
-Pendiente para la entrega del 23 de noviembre
+1. **El problema está en los algoritmos y no en el equipo.** En tres de las
+   cuatro operaciones el trabajo crece más rápido de lo necesario. La
+   consulta de inventario recorre la lista completa, $\Theta(N)$ por consulta,
+   y las 30.000 consultas por código equivalen a unos 6.600 millones de
+   inspecciones diarias (§1.2). El ordenamiento por inserción puede llegar a
+   costo cuadrático. El análisis de saturación examina
+   648.018.000 tramos por categoría. Cambiar la estrategia reduce el orden
+   de crecimiento; un equipo más rápido solo cambiaría la constante.
+
+2. **La estrategia correcta depende de la propiedad que tiene el problema.**
+   En el cargue, la restricción de lotes indivisibles y de valor máximo
+   exacto descarta las reglas voraces: los dos contraejemplos muestran que
+   vencimiento pierde 1570 unidades y densidad 450 frente al óptimo, y por
+   eso se usa programación dinámica, con costo $\Theta(nW)$. En la
+   saturación, el tramo óptimo se puede ensamblar a partir de óptimos
+   parciales, lo que permite dividir y vencer en $\Theta(n\log n)$ y, aún
+   mejor, Kadane en $\Theta(n)$. En la consulta de inventario hace falta
+   una estructura distinta según la pregunta: el índice hash responde por
+   código y no sirve para rangos, y un índice ordenado responde por rango.
+   Ninguna técnica es la mejor en todos los casos.
+
+3. **Dividir no siempre es lo más eficiente.** Dividir y vencer reduce
+   $\Theta(n^2)$ a $\Theta(n\log n)$, pero Kadane, que aprovecha que un
+   acumulado negativo nunca ayuda, lo reduce a $\Theta(n)$ con memoria
+   constante. Se comparan ambas, y se propone Kadane. Dividir y vencer queda
+   como verificación cruzada, ya que llega a la misma suma por otro camino.
+
+4. **La corrección se verificó con oráculos independientes.** La suite de
+   saturación contrasta las tres estrategias con dos oráculos en casos
+   límite, 200 series aleatorias y series del tamaño real de 36.000 horas por
+   categoría; en todos coinciden las sumas. La suite del cargue contrasta la
+   programación dinámica con la exhaustiva en 40 instancias pequeñas y con
+   las reglas voraces en rutas del tamaño real.
+
+5. **La ventaja del cargue es la calidad, no la energía.** Bajo el modelo de
+   §4.3, la programación dinámica tarda unos 2,05 s en los 14 vehículos, muy
+   por debajo de la ventana de dos horas, y consume del orden de
+   0,0256 kWh al año (§6.1). Eso es más que la regla por vencimiento
+   (≈ 0,00007 kWh al año), de modo que no se afirma un ahorro eléctrico.
+   Lo que aporta es el valor nutricional máximo con la capacidad dada. El
+   consumo de cómputo, en cualquier caso, es pequeño frente a lo que está en
+   juego: según el caso, cada kilogramo de alimento desechado equivale a
+   2,5 kg de CO₂ equivalente, y las pruebas sintéticas no permiten cuantificar
+   cuántos kilogramos se evitarían.
+
+6. **Efectos sobre las personas.** Optimizar el valor total puede dejar sin
+   atención a una organización cuyos lotes aportan poco valor, como un
+   jardín infantil. Se recomienda ponderar por prioridad o fijar cupos
+   mínimos, y vigilar las exclusiones persistentes (§6.2 y §6.3). Antes de
+   cualquier optimización hay que excluir los lotes vencidos, y dentro de
+   cada categoría debe despacharse primero el que vence primero. Ninguna
+   estrategia modifica los registros originales, lo que apoya la
+   trazabilidad ante un retiro de producto.
+
+7. **Crecimiento.** Con una segunda bodega, el cargue duplica su costo al
+   duplicarse los vehículos (§6.2). En saturación, si cada bodega conserva
+   sus propias series, se duplica el número de series y el trabajo se
+   duplica en las tres estrategias. Si, en cambio, se duplicara la longitud de cada
+   serie, Kadane duplicaría su trabajo, dividir y vencer lo haría un poco más
+   que el doble y la exhaustiva lo cuadruplicaría. Las operaciones 1 y 2 se
+   mantienen como propuesta y habría que revisarlas con el inventario
+   duplicado.
+
+8. **Límites.** Los datos son sintéticos y las mediciones se hicieron en una
+   sola máquina; las energías son estimaciones de cómputo, sin medición
+   eléctrica directa. Las operaciones 1 y 2 son propuestas de diseño sin
+   implementación ni tiempos medidos. Los tiempos de saturación (§4.6) se
+   tomaron en otra máquina que los del cargue, y la exhaustiva a 36.000 horas
+   se extrapola, no se ejecuta. La línea base energética del proceso completo
+   (§4.5) supone 150 W constantes. El tiempo del cargue no certifica que
+   el proceso completo quepa en la ventana (§4.4). La capacidad del cuarto
+   frío no se deduce solo del tramo de mayor crecimiento: hacen falta el
+   inventario inicial y las condiciones de almacenamiento de cada producto.
+
+**Recomendación.** Programación dinámica para el cargue de vehículos y Kadane
+para el tramo de saturación, ambas implementadas y verificadas. Para la
+consulta de inventario, un índice hash por código y un índice ordenado por
+fecha de vencimiento; para FEFO, ordenar las incorporaciones y fusionarlas
+con el inventario ya ordenado. Estas dos últimas deben implementarse y
+medirse antes de adoptarlas.
 
 ---
 
@@ -748,11 +1103,18 @@ Operación 4, saturación de la bodega:
 
 ```bash
 # Pruebas: datos, casos límite, ejemplo manual y contraste con el oráculo.
-# Sale con código 1 si falta alguna de las tres estrategias.
+# Sale con código 1 si falta alguna de las tres estrategias;
+# con las tres implementadas debe terminar con código 0.
 python -B src/saturacion_bodega/pruebas.py
 
 # Ejemplo de serie sintética de 36.000 horas con la semilla base
 python -B src/saturacion_bodega/datos.py
+
+# Mediciones de saturación: genera resultados.json y la gráfica
+python -B src/saturacion_bodega/medicion.py
+
+# Reconstruir solo la gráfica con los datos publicados
+python -B src/saturacion_bodega/medicion.py --solo-graficas
 ```
 
 Las suites `pruebas.py` no requieren dependencias externas. Las suites del cargue se ejecutaron correctamente. `pruebas_contraejemplos.py` imprime tablas de lotes, selecciones, pesos, valores y diferencias. Todas deben ejecutarse sin `-O`, para conservar las aserciones.
@@ -776,4 +1138,23 @@ python -B src/cargue_vehiculos/medicion.py --solo-graficas
 
 ### 8.1. Exportación del informe a PDF
 
-Pendiente para la entrega del 23 de noviembre
+Con [Pandoc](https://pandoc.org/) y un motor LaTeX con soporte Unicode
+(XeLaTeX), desde la raíz del repositorio, para que las rutas relativas de
+las imágenes se resuelvan:
+
+```bash
+pandoc README.md -o informe.pdf \
+  --pdf-engine=xelatex \
+  --toc --number-sections=false \
+  -V lang=es -V geometry:margin=2.5cm \
+  -V mainfont="DejaVu Serif" -V monofont="DejaVu Sans Mono"
+```
+
+Las fórmulas con `$...$` y las tablas se convierten sin pasos adicionales.
+Si se trabaja en WSL Ubuntu, la instalación es
+`sudo apt install pandoc texlive-xetex texlive-lang-spanish fonts-dejavu`.
+Si no se desea instalar LaTeX, otra opción es abrir el informe en un
+visor de Markdown con soporte de fórmulas e imprimirlo como PDF. Después de
+exportar, hay que revisar que las tablas anchas no se corten, que las tres
+gráficas del cargue y la de saturación aparezcan, y que los símbolos
+(por ejemplo $\Theta$ y el subíndice de CO₂) se vean bien.
